@@ -3,6 +3,13 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+# for MATLAB
+*.asv
+data/
+*.png
+*.mp4
+*.mat
+
 # User-specific files
 *.rsuser
 *.suo
