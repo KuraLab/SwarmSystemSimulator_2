@@ -6,11 +6,12 @@ classdef Simulator
         param   % パラメータの入った構造体オブジェクト
     end
     
-    methods
+    methods (Access=public)
         function obj = Simulator()
             % コンストラクタ
-            obj.param = struct;   % paramオブジェクトの生成
-            obj = obj.setDefaultParameters();
+            obj.param = struct;                     % paramオブジェクトの生成
+            obj = obj.setFigureProperty('default'); % 図の設定を一旦デフォルトに戻す．bodeなどを扱うときにこっちで設定したプロパティが残っていると危険なので．
+            obj = obj.setDefaultParameters();       % パラメタのデフォルト値を設定
         end
         
         function obj = setDefaultParameters(obj)
@@ -26,7 +27,7 @@ classdef Simulator
                 value = 0       % パラメータ初期値．省略なら0が入る
             end
             if isfield(obj.param, field)
-                obj.param.field = value;
+                obj.param.(field) = value;
             else
                 disp("WARNIG：パラメータに "+field+" は存在しません");
             end
