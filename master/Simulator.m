@@ -33,9 +33,10 @@ classdef Simulator
         end
 
         function obj = setMultiParam(obj, list)
+            % 複数パラメータを同時に変更
             arguments
                 obj         % Simulatorオブジェクト
-                list        % フィールドと値が並んだ配列．["Nt", 10, "use_CBF", true] みたいに使う
+                list        % フィールド名と値が並んだ配列．["Nt", 10, "use_CBF", true] みたいに使う
             end
             if mod(length(list),2) == 0
                 paramN = length(list)/2;
@@ -46,6 +47,29 @@ classdef Simulator
                 disp("WARNIG : パラメータリストの長さは，2の整数倍である必要があります");
             end
         end
+
+        function obj = setFigureProperty(obj, preset)
+            % 図のプロパティを変更．MATLABのオリジナルはちょっと文字が小さいので
+            % 継承先では自分オリジナルのプリセットを作っても良いと思う
+            arguments
+                obj
+                preset {mustBeMember(preset, ["default", "large"])} = "default" % 標準でdefault設定に
+            end
+            if preset == "default"
+                set(0,"DefaultAxesFontSize",'default');
+                set(0,"DefaultLineLineWidth",'default');
+                set(0,"DefaultAxesXGrid",'default');
+                set(0,"DefaultAxesYGrid",'default');
+            end
+            if preset == "large"
+                % 論文掲載できる位の文字サイズ，線太さに．グリッドも標準でつける．
+                set(0,"DefaultAxesFontSize",13);    % フォントサイズ13
+                set(0,"DefaultLineLineWidth",2);    % 線の太さ2
+                set(0,"DefaultAxesXGrid",'on');     % X軸方向のグリッドON
+                set(0,"DefaultAxesYGrid",'on');     % Y軸方向のグリッドON
+            end
+        end
+
     end
 end
 
