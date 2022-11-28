@@ -80,6 +80,22 @@ classdef SyncronizingCoupledOscillator < Simulator
             % 一括描画用の最低限プロット
             plot(obj.t_vec, obj.phi-obj.phi(1,:));
         end
+        
+        function obj = generateMovie(obj, filename, speed)
+            arguments
+                obj
+                filename string = "movie.mp4" % 保存するファイル名
+                speed = 1       % 動画の再生速度
+            end
+            obj.makeMovie(@obj.moviePlot, obj.param.dt, obj.param.Nt, filename, speed);
+        end
 
+        function moviePlot(obj,t)
+            % 動画用のフレーム単位プロット
+            plot(obj.param.dt*(t-1), obj.phi(:,t)-obj.phi(1,t),'*','Color','k');
+            hold on
+            xlim([obj.t_vec(1), obj.t_vec(end)]);
+            ylim([-2,0.1]);
+        end
     end % methods
 end % class

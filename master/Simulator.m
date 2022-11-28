@@ -70,6 +70,36 @@ classdef Simulator
                 set(0,"DefaultAxesYGrid",'on');     % Y軸方向のグリッドON
             end
         end
+        
+        function obj = makeMovie(obj, func, dt, Nt, filename, speed)
+            % 動画の作成
+            arguments
+                obj
+                func                            % フレームごとの描画関数．シミュレーションオブジェクトと現在のカウントを渡す
+                dt                              % シミュレーションの刻み時間
+                Nt                              % シミュレーションカウント数
+                filename string = "movie.mp4"   % 保存するファイル名
+                speed = 1                       % 動画の再生速度
+            end
+            figure
+            disp("アニメーション描画を開始します")
+            F(Nt) = struct('cdata',[],'colormap',[]);
+            for t = 1:Nt
+                func(t);
+                drawnow;
+                F(t) = getframe;
+                if strcmp(get(gcf,'currentcharacter'),'q')  % key stop
+                    break; % 中止したいときはqを押す
+                end
+            end
+            disp("アニメーション描画を終了します")
+            v = VideoWriter(filename,'MPEG-4');
+            v.FrameRate = round(1/dt*speed);
+            open(v);
+            writeVideo(v,F(1:t));
+            close(v);
+            disp("Animation : 動画が保存されました")
+        end
 
     end
 end

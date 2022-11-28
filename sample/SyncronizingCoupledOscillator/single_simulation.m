@@ -16,3 +16,6 @@ simulation = simulation.simulate(); % シミュレーションの実施
 simulation = simulation.plot();% 描画
 
 % save results.mat simulation % 保存
+
+%% 動画作成
+simulation.generateMovie();
