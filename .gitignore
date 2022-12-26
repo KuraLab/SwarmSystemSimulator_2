@@ -9,6 +9,9 @@ data/
 *.png
 *.mp4
 *.mat
+*.fig
+
+.vscode/
 
 # User-specific files
 *.rsuser
