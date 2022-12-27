@@ -5,7 +5,7 @@ classdef continuousSimulator< Simulator
         t_vec   % 固有時刻ベクトル
         x_vec
         rho       % 状態変数
-        drhodt
+        v
         phi
         Nabla   % 勾配を計算するための線形作用素
         Lap   % ラプラシアンを計算するための線形作用素
@@ -26,11 +26,11 @@ classdef continuousSimulator< Simulator
             obj.param.Nt = 300;    % 計算するカウント数
             obj.param.Nx = 100;     % 空間方向の点数
             %%%%%%%% システムパラメータ %%%%%%%%
-            obj.param.k = 0.1;       % 勾配追従力ゲイン
+            obj.param.k = 0.01;       % 勾配追従力ゲイン
             obj.param.kappa = 2;      % 結合強度
             %%%%%%%%%%%%%% 初期値 %%%%%%%%%%%%%
             obj.param.rho_0 = ones(obj.param.Nx,1);
-            obj.param.drhodt_0 = zeros(obj.param.Nx,1);
+            obj.param.v_0 = zeros(obj.param.Nx,1);
             obj.param.phi_0 = zeros(obj.param.Nx,1);
         end
         
@@ -40,10 +40,10 @@ classdef continuousSimulator< Simulator
             obj.t_vec = 0:obj.param.dt:obj.param.dt*(obj.param.Nt-1); % 時刻ベクトルの定義
             obj.x_vec = 0:obj.param.dx:obj.param.dx*(obj.param.Nx-1); % 位置ベクトルの定義
             obj.rho(:,:) = zeros(obj.param.Nx, obj.param.Nt);    % 状態変数の定義
-            obj.drhodt(:,:) = zeros(obj.param.Nx, obj.param.Nt);    % 状態変数の定義
+            obj.v(:,:) = zeros(obj.param.Nx, obj.param.Nt);    % 状態変数の定義
             obj.phi(:,:) = zeros(obj.param.Nx, obj.param.Nt);
             obj.rho(:,1) = obj.param.rho_0;   % 初期値の代入
-            obj.drhodt(:,1) = obj.param.drhodt_0;   % 初期値の代入
+            obj.v(:,1) = obj.param.v_0;   % 初期値の代入
             obj.phi(:,1) = obj.param.phi_0;
         end
 
@@ -65,8 +65,8 @@ classdef continuousSimulator< Simulator
             for t = 1:obj.param.Nt-1
                 % ループ毎の更新をここに
                 % u = obj.param.K*obj.x(:,t);
-                obj.rho(:,t+1) = obj.rho(:,t) + obj.param.dt*obj.drhodt(:,t);
-                obj.drhodt(:,t+1) = obj.drhodt(:,t) - obj.param.k*obj.param.dt*obj.Nabla*obj.phi(:,t);
+                obj.rho(:,t+1) = obj.rho(:,t) - obj.param.dt*obj.Nabla*(obj.rho(:,t).*obj.v(:,t));
+                obj.v(:,t+1) = obj.v(:,t) + obj.param.k*obj.param.dt*obj.Nabla*obj.phi(:,t);
                 obj.phi(:,t+1) = obj.phi(:,t) + obj.param.kappa*obj.param.dt*obj.Lap*obj.phi(:,t);
             end % for
             toc
