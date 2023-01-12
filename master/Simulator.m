@@ -71,7 +71,7 @@ classdef Simulator
             end
         end
         
-        function obj = makeMovie(obj, func, dt, Nt, filename, speed)
+        function obj = makeMovie(obj, func, dt, Nt, filename, speed, capture_all)
             % 動画の作成
             arguments
                 obj
@@ -80,14 +80,19 @@ classdef Simulator
                 Nt                              % シミュレーションカウント数
                 filename string = "movie.mp4"   % 保存するファイル名
                 speed = 1                       % 動画の再生速度
+                capture_all = false             % 画面全体をキャプチャするか？
             end
-            figure
+            f = figure;
             disp("アニメーション描画を開始します")
             F(Nt) = struct('cdata',[],'colormap',[]);
             for t = 1:Nt
                 func(t);
                 drawnow;
-                F(t) = getframe;
+                if capture_all
+                    F(t) = getframe(f); % gcfをキャプチャ
+                else
+                    F(t) = getframe;    % gcaをキャプチャ
+                end
                 if strcmp(get(gcf,'currentcharacter'),'q')  % key stop
                     break; % 中止したいときはqを押す
                 end

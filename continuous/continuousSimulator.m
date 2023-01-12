@@ -23,11 +23,14 @@ classdef continuousSimulator< Simulator
             %%%%%%%% シミュレータの基本情報 %%%%%%%
             obj.param.dt = 0.05;    % 刻み時間
             obj.param.dx = 0.1;    % 刻み距離
-            obj.param.Nt = 300;    % 計算するカウント数
+            obj.param.Nt = 1000;    % 計算するカウント数
             obj.param.Nx = 100;     % 空間方向の点数
             %%%%%%%% システムパラメータ %%%%%%%%
             obj.param.k = 0.01;       % 勾配追従力ゲイン
+            obj.param.kp = 0.1;       % 群形成力ゲイン
+            obj.param.eta = 0.1;      % 粘性ゲイン
             obj.param.kappa = 2;      % 結合強度
+            obj.param.Omega = 0.1;      % 固有角速度
             %%%%%%%%%%%%%% 初期値 %%%%%%%%%%%%%
             obj.param.rho_0 = ones(obj.param.Nx,1);
             obj.param.v_0 = zeros(obj.param.Nx,1);
@@ -66,8 +69,9 @@ classdef continuousSimulator< Simulator
                 % ループ毎の更新をここに
                 % u = obj.param.K*obj.x(:,t);
                 obj.rho(:,t+1) = obj.rho(:,t) - obj.param.dt*obj.Nabla*(obj.rho(:,t).*obj.v(:,t));
-                obj.v(:,t+1) = obj.v(:,t) + obj.param.k*obj.param.dt*obj.Nabla*obj.phi(:,t);
-                obj.phi(:,t+1) = obj.phi(:,t) + obj.param.kappa*obj.param.dt*obj.Lap*obj.phi(:,t);
+                obj.v(:,t+1) = obj.v(:,t) + obj.param.k*obj.param.dt*obj.Nabla*obj.phi(:,t) - obj.param.kp*obj.param.dt*obj.Nabla*(obj.rho(:,t)-1) - obj.param.eta*obj.param.dt*obj.v(:,t);
+                obj.phi(:,t+1) = obj.phi(:,t) + obj.param.kappa*obj.param.dt*obj.Lap*obj.phi(:,t) + obj.param.dt*obj.param.Omega*(obj.x_vec.'==50);
+                %obj.phi(:,t+1) = obj.phi(:,t) + obj.param.kappa*obj.param.dt*obj.Lap*obj.phi(:,t);
             end % for
             toc
         end % simulate
@@ -77,8 +81,8 @@ classdef continuousSimulator< Simulator
             disp("描画を開始します...")
 
             figure  % 生値プロット
-            plot(obj.t_vec, obj.rho(:,:));
-            title("状態の時間変化")
+            plot(obj.t_vec, obj.phi(:,:));
+            title("\rho(x,t)")
             legend(string(1:obj.param.Nx));
             xlabel("時刻 t [s]")
         end
@@ -92,10 +96,16 @@ classdef continuousSimulator< Simulator
 
         function moviePlot(obj,t)
             % 動画用のフレーム単位プロット
+            f = gcf;
+            f.Position = [100,100,960,540];
             subplot(1,2,1)
             plot(obj.x_vec, obj.rho(:,t).','Color',"#0072BD");
+            hold on
+            plot(obj.x_vec, obj.rho(:,1).','--','Color',"#D95319");
             %xlim([0,12]);
             ylim([min(obj.rho,[],'all'),max(obj.rho,[],'all')]);
+            %ylim([0.99,1.05]);
+            legend("\rho(x,t)","\rho(x,0)")
             ylabel("rho");
             xlabel("x");
             hold off
@@ -103,12 +113,14 @@ classdef continuousSimulator< Simulator
             subplot(1,2,2)
             plot(obj.x_vec, obj.phi(:,t).','Color',"#0072BD");
             hold on
+            plot(obj.x_vec, obj.phi(:,1).','--','Color',"#D95319");
             %xlim([0,12]);
-            ylim([0,1]);
+            legend("\phi(x,t)","\phi(x,0)")
+            ylim([min(obj.phi,[],'all'),max(obj.phi,[],'all')]);
             ylabel("phi");
             xlabel("x");
 
-            text(obj.x_vec(end)*0.7, 0.8, "t = "+string(t), 'FontSize',12);
+            text(obj.x_vec(end)*0.7, max(obj.phi,[],'all')*0.8, "t = "+string(t), 'FontSize',12);
             hold off
         end
 
@@ -128,7 +140,7 @@ classdef continuousSimulator< Simulator
                 filename string = "movie.mp4" % 保存するファイル名
                 speed = 1       % 動画の再生速度
             end
-            obj.makeMovie(@obj.moviePlot, obj.param.dt, obj.param.Nt, filename, speed);
+            obj.makeMovie(@obj.moviePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
         end
 
         function obj = generateMovie2(obj, filename, speed)
