@@ -61,7 +61,7 @@ classdef MobileRobots2dSimulator < Simulator
             run(obj.param.environment_file);
             obj.param.space_x = [envset_xmin, envset_xmax]; % envset_xmin,maxにx方向の端の値を指定
             obj.param.space_y = [envset_ymin, envset_ymax];
-            obj.wall = permute(envset_wall_segments,[2,1,3]); % 障害物セグメント情報を読み取り
+            obj.wall = permute(envset_wall_segments,[1,2,3]); % 障害物セグメント情報を読み取り
         end
 
         function obj = defineSystem(obj)
@@ -111,6 +111,31 @@ classdef MobileRobots2dSimulator < Simulator
             obj.u(:,:,t) = u_t;
         end
 
+        function relative_vectors = calcVectorToWalls(obj,t)
+            % 壁セグメントまでの相対位置
+            % @return relative_vectors [ロボット数, 空間次元, 壁セグメント数]
+            arguments
+                obj
+                t   % 時刻
+            end
+            Nwall_ = length(obj.wall); % 壁セグメントの数
+            relative_vectors = zeros(obj.param.Na, 2, Nwall_);
+            for p_ = 1:Nwall_   % セグメント毎に計算
+                arg_ = atan2(obj.wall(2,2,p_)-obj.wall(1,2,p_),obj.wall(2,1,p_)-obj.wall(1,1,p_)); % セグメントのx軸からの偏角
+                Rot_ = [cos(arg_), sin(arg_); -sin(arg_), cos(arg_)];   % 回転行列
+                rotated_x_ = Rot_ * obj.x(:,:,t).'; % 回転後のエージェント座標．[空間次元, ロボット数]なので注意
+                rotated_segment_ = Rot_ * obj.wall(:,:,p_).';  % 回転後のセグメント端点. y座標は同じになるはず．[空間次元, [開始/終了]]なので注意
+                rv__ = zeros(2,obj.param.Na);   % 相対ベクトルを保持する中間変数．[空間次元,ロボット数]
+                % 開始点のx座標よりもロボットのx座標が小さければ，開始点との相対位置
+                rv__(:,:) = ( rotated_x_(1,:)<rotated_segment_(1,1) ).* (rotated_segment_(:,1)-rotated_x_(:,:));
+                % 終了点のx座標よりもロボットのx座標が大きければ，終了点との相対位置
+                rv__(:,:) = rv__(:,:) + ( rotated_x_(1,:)>rotated_segment_(1,2) ).* (rotated_segment_(:,2)-rotated_x_(:,:));
+                % 終了点と開始点の間にロボットのx座標があるならば，y座標の差
+                rv__(:,:) = rv__(:,:) + ( (rotated_x_(1,:)>=rotated_segment_(1,1)).*(rotated_x_(1,:)<=rotated_segment_(1,2)) ).*([rotated_x_(1,:);rotated_segment_(2,2)*ones(1,obj.param.Na)]-rotated_x_(:,:));
+                
+                relative_vectors(:,:,p_) = permute(Rot_.'*rv__,[2,1]);
+            end
+        end
 
     %%%%%%%%%%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%%%%
 
@@ -148,7 +173,7 @@ classdef MobileRobots2dSimulator < Simulator
             if isempty(obj.wall)    % 壁無かったら描画しない
                 return
             end
-            line(permute(obj.wall(1,:,:),[2,3,1]), permute(obj.wall(2,:,:),[2,3,1]), 'Color',"k",'LineWidth',1)
+            line(permute(obj.wall(:,1,:),[1,3,2]), permute(obj.wall(:,2,:),[1,3,2]), 'Color',"k",'LineWidth',1)
         end
 
         function obj = moviePlot(obj,t)
