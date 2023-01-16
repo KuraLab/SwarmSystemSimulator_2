@@ -56,7 +56,7 @@ classdef MobileRobots2dSimulator < Simulator
             %%%%%% 初期配置の読み込み %%%%%%
             run(obj.param.placement_file);
             obj.param.Na = posset_Na;               % posset_Naに台数
-            obj.param.x_0 = [posset_x, posset_y];   % posset_x,posset_yに初期位置
+            obj.param.x_0 = [posset_x, posset_y];   % posset_x[台数,1],posset_y[台数,1]に初期位置
             %%%%%% 環境情報の読み込み %%%%%%
             run(obj.param.environment_file);
             obj.param.space_x = [envset_xmin, envset_xmax]; % envset_xmin,maxにx方向の端の値を指定
@@ -105,7 +105,7 @@ classdef MobileRobots2dSimulator < Simulator
                 obj
                 t    % 時刻
             end
-            %disp("WARNIG : 継承前クラスのメソッドcalcControlInputが呼び出されている可能性があります")
+            disp("WARNIG : 継承前クラスのメソッドcalcControlInputが呼び出されている可能性があります")
             u_t = zeros(obj.param.Na, 2);   % 時刻tにおける入力
             %u_t(12,:) = [0.1,0.1];
             obj.u(:,:,t) = u_t;
