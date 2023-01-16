@@ -7,7 +7,7 @@ envset_ymin = -8;
 envset_ymax = 8;
 
 % 障害物
-L1_ = 6;    % 狭くなりはじめ-広くなり終わりまでの距離
+L1_ = 8;    % 狭くなりはじめ-広くなり終わりまでの距離
 L2_ = 4;    % 狭所長さ
 L3_ = 2.5;  % 狭所幅, w
 % L3_ = obj.param.w;
@@ -25,3 +25,5 @@ envset_wall_segments(:,:,9) = [[+L1_/2,envset_ymin];[+L2_/2,-L3_/2]];
 envset_wall_segments(:,:,10) = [[+L2_/2,-L3_/2];[-L2_/2,-L3_/2]];
 envset_wall_segments(:,:,11) = [[-L2_/2,-L3_/2];[-L1_/2,envset_ymin]];
 envset_wall_segments(:,:,12) = [[-L1_/2,envset_ymin];[envset_xmin,envset_ymin]];
+
+envset_upwall = [3,4,5];    % 上限を決める壁（枠除く）
