@@ -10,6 +10,8 @@ classdef AttractantFieldGenerator < Simulator
         wall    % 壁セグメントの集合 [開始/終了,空間次元,セグメント]
         active_area     % 領域内なら1, 領域外なら0
         source_index    % 匂い源の位置（インデックス）
+        cx              % 濃度場のx方向勾配
+        cy              % 濃度場のy方向勾配
     end
 
     methods
@@ -48,6 +50,8 @@ classdef AttractantFieldGenerator < Simulator
             obj.y_vec = obj.param.space_y(1):obj.param.dx:obj.param.space_y(2);
             obj.c(:,:,:) = zeros(length(obj.x_vec), length(obj.y_vec), obj.param.Nt);    % 状態変数の定義
             obj.c(:,:,1) = zeros(length(obj.x_vec), length(obj.y_vec));   % 初期値の代入
+            obj.cx(:,:) = zeros(length(obj.x_vec), length(obj.y_vec));
+            obj.cy(:,:) = zeros(length(obj.x_vec), length(obj.y_vec));
             obj.active_area = ones(length(obj.x_vec), length(obj.y_vec));   % 最初は全部領域内
             obj.source_index = round( (obj.param.source_pos-[obj.param.space_x(1) obj.param.space_y(1)])/obj.param.dx ) + 1;    % 匂い源インデックスの計算
         end
@@ -108,6 +112,12 @@ classdef AttractantFieldGenerator < Simulator
                 obj.c(:,:,t+1) = obj.c(:,:,t+1).*obj.active_area;  % アクティブエリア外はいらぬ 
             end % for
             toc
+            obj.cx(2:end-1,2:end-1) = ( log(obj.c(3:end,2:end-1,end))-log(obj.c(1:end-2,2:end-1,end)) )/(2*obj.param.dx);   % x方向勾配．(右-左)/2dx 
+            obj.cy(2:end-1,2:end-1) = ( log(obj.c(2:end-1,3:end,end))-log(obj.c(2:end-1,1:end-2,end)) )/(2*obj.param.dx);   % y方向勾配．(上-下)/2dx
+            obj.cx(isnan(obj.cx)) = 0;
+            obj.cy(isnan(obj.cy)) = 0;
+            obj.cx(~isfinite(obj.cx)) = 0;
+            obj.cy(~isfinite(obj.cy)) = 0;
         end % simulate
 
             %%%%%%%%%%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%%%%

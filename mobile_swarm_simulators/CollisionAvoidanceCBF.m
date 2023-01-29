@@ -10,6 +10,8 @@ classdef CollisionAvoidanceCBF
         devide = false  % 分割化されているCBFか？ true なら Lghの前の係数が2に
         A               % 非線形制約の左辺の行列(Au \leq b) [制約数, 空間次元]
         b               % 非線形制約の右辺のベクトル [制約数, 1]
+        options         % 最適化オプション
+        enable_cbf = true   % CBFを使うか？（falseにするのはデバッグのとき）
     end
     
     methods
@@ -19,9 +21,10 @@ classdef CollisionAvoidanceCBF
             obj.rs = 1;
             obj.Tc = 1;
             obj.gamma = 1;
+            obj.enable_cbf = true;
             obj.devide = false;
             obj = obj.clearConstraints();   % Aとbをクリア
-            options = optimoptions("quadprog","Display","off"); % ２次計画法のコマンドウィンドウ出力をなしに
+            obj.options = optimoptions("quadprog","Display","off"); % ２次計画法のコマンドウィンドウ出力をなしに
         end
 
         function obj = setParameters(obj,m_,rs_,Tc_,gamma_,devide_)
@@ -41,6 +44,16 @@ classdef CollisionAvoidanceCBF
             obj.devide = devide_;
         end
         
+        function obj = enable(obj)
+            % CBF制約の適用を有効化
+            obj.enable_cbf = true;
+        end
+
+        function obj = disable(obj)
+            % CBF制約の適用を無向化
+            obj.enable_cbf = false;
+        end
+
         function obj = addConstraints(obj,x_,dotx_)
             arguments
                 obj
@@ -72,9 +85,13 @@ classdef CollisionAvoidanceCBF
                 obj
                 u_nominal   % ノミナル入力．[1,空間次元]のベクトル
             end
+            if obj.enable_cbf == false
+                u = u_nominal;          % CBF使わないとき
+                return
+            end
             dim = length(u_nominal);
             delta_u = zeros(dim,1); % u-\bar{u}ノミナル入力との差 [空間次元,1]ベクトル
-            delta_u = quadprog(eye(dim), zeros(dim,1), obj.A, obj.b-obj.A*u_nominal.');    % A\delta u\leq b-A\hat{u}
+            delta_u = quadprog(eye(dim), zeros(dim,1), obj.A, obj.b-obj.A*u_nominal.',[],[],[],[],[],obj.options);    % A\delta u\leq b-A\hat{u}
             u = (u_nominal.' + delta_u).';
         end
     end
