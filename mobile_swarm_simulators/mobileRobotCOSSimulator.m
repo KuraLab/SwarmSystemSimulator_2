@@ -84,7 +84,7 @@ methods
             arguments
                 obj
                 t               % 時刻
-                dim = 1         % 次元
+                dim = 2         % 次元
             end
             delete(gca)
             obj = obj.placePlot(t,true, obj.cos.is_edge(:,dim,t));
@@ -100,7 +100,8 @@ methods
                 filename string = "movie.mp4" % 保存するファイル名
                 speed = 1       % 動画の再生速度
             end
-            obj.makeMovie(@obj.phasePlacePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
+            %obj.makeMovie(@obj.phasePlacePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
+            obj.makeMovie(@obj.edgeJudgePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
         end
 
 end

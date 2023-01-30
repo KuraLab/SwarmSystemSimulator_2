@@ -49,6 +49,12 @@ classdef Simulator
             end
         end
 
+        function obj = showSimulationTime(obj,t)
+            % シミュレーション進行中，現在時刻をウィンドウに表示
+            clc
+            disp("t = "+string(t)+"/"+string(obj.param.Nt));
+        end
+
         function obj = setFigureProperty(obj, preset)
             % 図のプロパティを変更．MATLABのオリジナルはちょっと文字が小さいので
             % 継承先では自分オリジナルのプリセットを作っても良いと思う

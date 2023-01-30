@@ -37,6 +37,7 @@ classdef WaveInteractionSimulator < Simulator
             obj.param.do_estimate = false;
             obj.param.is_judge_continuous = false;  % 内外判定結果を連続量にするか？
             obj.param.time_histry = 2048;     % パワースペクトラムで，どれくらい前の時刻情報まで使うか？
+            obj.param.minimum_store = 64;     % ここまでデータたまるまではスタートしない
             obj.param.power_threshold = 10^-10;
             %%%%%%%% 読み込みファイル名 %%%%%%%%
             %obj.param.environment_file = "setting_files/environments/narrow_space.m";  % 環境ファイル
@@ -97,6 +98,7 @@ classdef WaveInteractionSimulator < Simulator
                         % xがsetされていることを要確認
                         obj = obj.calcPartialDerivative(t); % 位相の空間微分の計算
                         obj = obj.relativePositionEstimate(t);  % 相対位置推定
+                        obj.showSimulationTime(t);
                     end
                 else
                     obj.phi(:,:,t+1) = obj.phi(:,:,t);
@@ -160,7 +162,7 @@ classdef WaveInteractionSimulator < Simulator
                 debug_agents = [];  % デバッグ用の描画を行うエージェント集合．空ならデバッグ描画なし
             end
             
-            if t<1024
+            if t<obj.param.minimum_store    % 蓄積データ少ない間は推定しない
                 return
             end
             if t>obj.param.time_histry
@@ -234,52 +236,10 @@ classdef WaveInteractionSimulator < Simulator
                     legend("\phi","\phi_x","\phi_y","x方向判定位置","y方向判定位置")
                     title("i = "+string(i)+", l_x = "+string(sqrt(obj.param.kappa)/2/fx_(maxindexx_))+", l_y = " + string(sqrt(obj.param.kappa)/2/fy_(maxindexy_)));
                 end
-                %{
-                figure
-                i=3
-                findpeaks(log(p_(:,i)))
-                hold on
-                findpeaks(log(px_(:,i)))
-                findpeaks(log(py_(:,i)))
-                %}
-                % sqrt(obj.param.kappa)/(2*fx_(peakx_index(maxindexx_),i))
-                %{
-                if ~isempty(p_(index_xwin(1))-px_(index_xwin(1)))
-                    obj.is_edge(i,1,t) = p_(index_xwin(1))-px_(index_xwin(1));
-                end
-                if ~isempty(p_(index_ywin(1))-px_(index_ywin(1)))
-                    obj.is_edge(i,2,t) = p_(index_ywin(1))-px_(index_ywin(1));
-                end
-                %}
-                %if (sum(index_ywin)==0)
-                %    obj.is_edge(i,2,t) = 0;
-                %else
-                %    obj.is_edge(i,2,t) = p_(index_ywin(1))-py_(index_ywin(1));    % 内外判定．1or0判定でなく，引き算して連続量にしてもよい
-                %end
-                %freq_xmode_ = freq_xwin(1);
-                %freq_ymode_ = freq_ywin(1);
+
             end
         end
-        %{
-        function f_sp = spatialization(obj,f_,x_,G_)
-            % xを使ってfの空間方向差分を求める．
-            % f : 対象のスカラ関数 Na*1
-            % x : エージェント座標 Na*sp_dim
-            % t : 対象時刻
-            Na_ = length(f_(:,:));  % エージェント数
-            Adj = full(adjacency(G_));  % 隣接行列
-            Deg = diag(degree(G_));  % 次数行列
-            f_sp = zeros(size(x_,1),size(x_,2));  % 返り値のサイズはエージェント数×空間次元
-            f_diff = Adj.*(repmat(f_(:,1),1,Na_)-repmat(f(:,1),1,Na_).'); % fの差分行列(エッジある間のみ)
-            x_diff(:,:,1) = repmat(x_(:,1),1,Na_)-repmat(x_(:,1),1,Na_).';  % 方向毎の差分行列
-            x_diff(:,:,2) = repmat(x_(:,2),1,Na_)-repmat(x_(:,2),1,Na_).';  % 本当はsp_dimでforループ回すべき
-            x_diff = normalize(x_diff,3,'norm'); % 空間方向に単位ベクトル化
-            x_diff = fillmissing(x_diff,'constant',0);  % NaNが出たら0で埋める．（主に対角成分）
-            f_sp_mat = zeros(Na_,Na_,2);
-            f_sp_mat = pagemtimes(f_diff,x_diff); % 方向毎に計算
-            f_sp = permute(pagemtimes(inv(Deg),sum(f_sp_mat,2)),[1,3,2]);
-        end
-        %}
+
         %%%%%%%%%%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%%%%
 
         function obj = plot(obj)

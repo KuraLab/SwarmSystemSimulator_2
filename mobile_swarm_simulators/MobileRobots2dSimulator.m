@@ -37,6 +37,7 @@ classdef MobileRobots2dSimulator < Simulator
             %%%%%%%%%%%%%% 初期値 %%%%%%%%%%%%%
             obj.param.x_0 = rand(obj.param.Na, 2);
             obj.param.dxdt_0 = zeros(obj.param.Na, 2);
+            obj.param.initial_pos_variance = 0;  % 初期位置の分散
         end
         
         function obj = initializeVariables(obj)
@@ -44,6 +45,7 @@ classdef MobileRobots2dSimulator < Simulator
             % 状態変数の定義と初期値の代入を行うこと
             obj.t_vec = 0:obj.param.dt:obj.param.dt*(obj.param.Nt-1); % 時刻ベクトルの定義
             obj.x(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 状態変数の定義
+            obj.param.x_0 = obj.param.x_0 + (2*rand(obj.param.Na, 2)-1)*obj.param.initial_pos_variance;
             obj.x(:,:,1) = obj.param.x_0;   % 初期値の代入
             obj.dxdt(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 状態変数の定義
             obj.dxdt(:,:,1) = obj.param.dxdt_0;   % 初期値の代入
