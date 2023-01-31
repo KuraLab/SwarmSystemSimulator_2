@@ -17,13 +17,14 @@ simulation = simulation.setParam("placement_file","setting_files/init_conditions
 simulation.cos = simulation.cos.setParam("kappa",100);
 simulation.cos = simulation.cos.setParam("do_estimate",true);
 simulation.cos = simulation.cos.setParam("time_histry",256);
+simulation.cos = simulation.cos.setParam("power_threshold",10^-7);
 %simulation.cbf = simulation.cbf.disable();
 simulation.cbf.gamma = 5;   % CBF : ナイーブ係数
 simulation.cbf.rs = 0.8;    % CBF : 安全距離
 simulation = simulation.setParam("kp",8);   % Swarm : 勾配追従力ゲイン
 simulation = simulation.setParam("kf",20);  % Swarm : 群形成力ゲイン
 simulation = simulation.setParam("kd",10);   % Swarm : 粘性ゲイン
-simulation = simulation.setParam("Nt",2000);
+simulation = simulation.setParam("Nt",1200);
 simulation = simulation.setParam("is_debug_view",false);
 simulation = simulation.setParam("initial_pos_variance", 0.0);
 simulation = simulation.setParam("attract_force_type", "linear_fbx");
@@ -35,12 +36,19 @@ simulation = simulation.simulate(); % シミュレーションの実施
 %% 描画とか
 figure
 simulation.edgeJudgePlot(1800,2);
-simulation.placePlot(1800);
+simulation.placePlot(1100);
 % simulation.cos = simulation.cos.plot();
 % simulation = simulation.generateMovieEstimate();
 simulation = simulation.generateMovieEstimate();
 simulation = simulation.setParam("is_debug_view",true);
-simulation = simulation.calcControlInput(100);
+simulation = simulation.calcControlInput(750);
+simulation.cos.relativePositionEstimate(750,[8,9,10]);  % 推定デバッグ表示
+simulation.cos.peakAndFreqPlot([8,9,10]);   % エージェント毎ピーク履歴
+simulation.cos.peakAndFreqPlot2([1,5:20]);   % モード毎ピーク履歴
+% simulation.cos.spectrumPlot(750,8);   % 特定時刻スペクトラムプロット
+% simulation.cos.generateSpectrumMovie();
+% simulation.cos.deadlockPlot([1,5:20]);
+% simulation.cos.variancePlot([1,5:20]);
 
 %% シミュレーションの実施 : 回す
 kp_list = [0.5, 1, 2, 4, 8, 10];

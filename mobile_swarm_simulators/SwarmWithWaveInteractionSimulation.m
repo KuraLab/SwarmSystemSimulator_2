@@ -163,6 +163,21 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             hold off
         end
 
+        function obj = edgeDeadlockPlot(obj,t,dim)
+            % ロボットの相対位置推定+デッドロック判定プロット
+            arguments
+                obj
+                t               % 時刻
+                dim = 2         % 次元
+            end
+            delete(gca)
+            obj = obj.placePlot(t,true, (-1+2*obj.cos.is_edge(:,dim,t)).*obj.cos.is_deadlock(:,1,t));
+            clim([-1,1])
+            colorbar
+            text(obj.param.space_x(2)*0.65, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
+            hold off
+        end
+
         function obj = edgeJudgePlot(obj, t, dim)
             % ロボットの位置プロット
             arguments
@@ -185,7 +200,8 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                 filename string = "movie.mp4" % 保存するファイル名
                 speed = 1       % 動画の再生速度
             end
-             obj.makeMovie(@obj.edgeJudgePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
+             %obj.makeMovie(@obj.edgeJudgePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
+            obj.makeMovie(@obj.edgeDeadlockPlot, obj.param.dt, obj.param.Nt, filename, speed, true);
         end
 
         function obj = generateMovie(obj, filename, speed)

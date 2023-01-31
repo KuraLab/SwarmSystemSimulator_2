@@ -12,6 +12,11 @@ classdef WaveInteractionSimulator < Simulator
         x        % エージェント座標
         phi_x     % 位相の方向微分 [台数,空間次元,時刻]
         is_edge  % 自身が端っこか？ [台数,空間次元,時刻]
+        peaks       % ピークの大きさ [台数,モード数,時刻]
+        peak_freqs  % ピークの位置 [台数,モード数,時刻]
+        is_deadlock % 自身がデッドロック状態か判定 [台数,1,時刻]
+        peak_variances_db  % ピークの分散 [台数,モード数,時刻]
+        freq_variances  % ピーク周波数の分散 [台数,モード数,時刻]
     end
     
     methods
@@ -29,16 +34,22 @@ classdef WaveInteractionSimulator < Simulator
             obj.param.Nt = 400;    % 計算するカウント数
             obj.param.Na = 20;       % エージェント数
             %%%%%%%% システムパラメータ %%%%%%%%
+            % 振動子系そのもの %
             % obj.param.K = 1;       % ゲイン
             obj.param.kappa = 10;      % 結合強度
             obj.param.omega_0 = [5; 5];      % 固有角速度
             obj.param.gamma = 0;        % 粘性
             obj.param.interaction_type = "wave";    % 相互作用の形
+            % 各種推定 %
             obj.param.do_estimate = false;
             obj.param.is_judge_continuous = false;  % 内外判定結果を連続量にするか？
             obj.param.time_histry = 2048;     % パワースペクトラムで，どれくらい前の時刻情報まで使うか？
             obj.param.minimum_store = 64;     % ここまでデータたまるまではスタートしない
             obj.param.power_threshold = 10^-10;
+            obj.param.peak_memory_num = 2;   % ピーク情報を何次まで記録するか
+            obj.param.power_variance_db = 10^-3; % デッドロック判定時のパワー分散閾値
+            obj.param.freq_variance_hz = 10^-5;  % デッドロック判定時の周波数分散閾値
+            obj.param.deadlock_stepwith = 100;  % デッドロック判定．何ステップ分の定常状態を要請するか？
             %%%%%%%% 読み込みファイル名 %%%%%%%%
             %obj.param.environment_file = "setting_files/environments/narrow_space.m";  % 環境ファイル
             %obj.param.placement_file = "setting_files/init_conditions/narrow_20.m";    % 初期位置ファイル
@@ -56,12 +67,13 @@ classdef WaveInteractionSimulator < Simulator
             obj.phi(:,:,:) = zeros(obj.param.Na, 1, obj.param.Nt);    % 状態変数の定義
             obj.phi_x(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 状態変数の定義
             obj.phi(:,:,1) = obj.param.phi_0;   % 初期値の代入
-            %obj.dphidt(:,:,:) = zeros(obj.param.Na, 1, obj.param.Nt);    % 状態変数の定義
-            %obj.dphidt(:,:,1) = obj.param.dphidt_0;   % 初期値の代入
             obj.x(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 状態変数の定義
             obj.is_edge(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);  % 内外変数
-            %obj.x(:,:,1) = obj.param.x_0;   % 初期値の代入
-            %obj.u(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 入力の履歴
+            obj.is_deadlock(:,:,:) = zeros(obj.param.Na, 1, obj.param.Nt);  % デッドロック判定
+            obj.peaks(:,:,:) = zeros(obj.param.Na, obj.param.peak_memory_num, obj.param.Nt);    % ピークの大きさ
+            obj.peak_freqs(:,:,:) = zeros(obj.param.Na, obj.param.peak_memory_num, obj.param.Nt);    % ピークの大きさ
+            obj.peak_variances_db(:,:,:) = zeros(obj.param.Na, obj.param.peak_memory_num, obj.param.Nt);    % ピークの分散
+            obj.freq_variances(:,:,:) = zeros(obj.param.Na, obj.param.peak_memory_num, obj.param.Nt);    % ピーク位置の分散
         end
 
         function obj = defineSystem(obj)
@@ -176,9 +188,16 @@ classdef WaveInteractionSimulator < Simulator
             [px_,fx_] = pspectrum(permute(obj.phi_x(:,1,t_start_:t),[3,1,2]), obj.t_vec(t_start_:t));
             [py_,fy_] = pspectrum(permute(obj.phi_x(:,2,t_start_:t),[3,1,2]), obj.t_vec(t_start_:t));
             for i = 1:obj.param.Na  % エージェント毎回し
-                %[~,peak_index] = findpeaks(p_(:,i),"MinPeakHeight",obj.param.power_threshold);    % ピーク検出
+                [peak,peak_index] = findpeaks(p_(:,i),"MinPeakHeight",obj.param.power_threshold);    % ピーク検出
                 [~,peakx_index] = findpeaks(px_(:,i),"MinPeakHeight",obj.param.power_threshold);    % ピーク検出
                 [~,peaky_index] = findpeaks(py_(:,i),"MinPeakHeight",obj.param.power_threshold);    % ピーク検出
+                if length(peak)<obj.param.peak_memory_num
+                    n_ = length(peak);
+                else
+                    n_ = obj.param.peak_memory_num;
+                end
+                obj.peaks(i,1:n_,t) = peak(1:n_);
+                obj.peak_freqs(i,1:n_,t) = f_(peak_index(1:n_));
                 if isempty(peakx_index)  % ピークがemptyの場合は最低周波数でピーク0に
                     pksx_ = 0;
                     peakx_index = 1;
@@ -222,7 +241,8 @@ classdef WaveInteractionSimulator < Simulator
                 % ピーク周波数f[Hz]としてエージェント長l. \mu次モードについて l = \mu\sqrt{\kappa}/{2f}
                 % 微分時に\pi/l倍されているはずなので，l/\pi = \um\sqrt{\kappa}/{2\pi
                 % f}を描ければいいのではと．一旦\mu = 1
-                if ismember(i,debug_agents)
+
+                if ismember(i,debug_agents) %デバッグ用描画
                     figure
                     plot(f_,10*log(p_(:,i)));
                     hold on
@@ -231,13 +251,33 @@ classdef WaveInteractionSimulator < Simulator
                     plot(fx_(maxindexx_)*ones(2,1),10*log([p_(maxindexx_,i); px_(maxindexx_,i)]),'o');
                     plot(fy_(maxindexy_)*ones(2,1),10*log([p_(maxindexy_,i); py_(maxindexy_,i)]),'o');
                     xlabel("周波数 Hz")
-                    xlim([0,1])
+                    xlim([0,5])
                     ylabel("パワー dB")
                     legend("\phi","\phi_x","\phi_y","x方向判定位置","y方向判定位置")
                     title("i = "+string(i)+", l_x = "+string(sqrt(obj.param.kappa)/2/fx_(maxindexx_))+", l_y = " + string(sqrt(obj.param.kappa)/2/fy_(maxindexy_)));
                 end
-
             end
+            obj = obj.judgeDeadlock(t); % デッドロック判定
+        end
+
+        function obj = judgeDeadlock(obj,t)
+            % deadlock判定
+            % @brief is_deadlock変数に1か0を返す
+            % @brief 時刻tにおけるpeakの計算後に呼び出すこと
+            if t < obj.param.minimum_store+obj.param.deadlock_stepwith
+                return  % データがたまっていなかったらリターン
+            end
+            if t>700
+                disp("debug")
+            end
+            peak_variances_ = zeros(obj.param.Na,obj.param.peak_memory_num);    % ピークの大きさの分散
+            freq_variances_ = zeros(obj.param.Na,obj.param.peak_memory_num);    % ピークの位置の分散
+            peak_variances_ = var(10*log10(obj.peaks(:,:,t-obj.param.deadlock_stepwith+1:t)),0,3);   % 時刻に沿った分散を計算．N-1で正規化
+            freq_variances_ = var(obj.peak_freqs(:,:,t-obj.param.deadlock_stepwith+1:t),0,3);
+            obj.is_deadlock(:,:,t) = prod(peak_variances_<obj.param.power_variance_db,2).*prod(freq_variances_<obj.param.freq_variance_hz,2);
+            obj.peak_variances_db(:,:,t) = peak_variances_;
+            obj.freq_variances(:,:,t) = freq_variances_;
+            % 各モードの大きさ，周波数について全ての分散が閾値を下回っていたら，デッドロックと判定
         end
 
         %%%%%%%%%%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%%%%
@@ -251,6 +291,147 @@ classdef WaveInteractionSimulator < Simulator
             plot(obj.t_vec, permute(obj.phi(:,1,:),[1,3,2]))
         end
 
+        function obj = spectrumPlot(obj,t,num)
+            % 指定エージェントのスペクトラムを描画
+            arguments
+                obj
+                t       % 時刻
+                num = [9,10]    % エージェント番号
+            end
+            if t<obj.param.minimum_store    % 蓄積データ少ない間は推定しない
+                return
+            end
+            if t>obj.param.time_histry
+                % 時刻が推定に使うデータ点数より多いかどうかで，使う時刻幅を変える
+                t_start_ = t-obj.param.time_histry;
+            else
+                t_start_ = 1;
+            end
+            % 各位相情報に関するパワースペクトラム p_は [周波数,チャンネル]となっているので注意
+            [p,f] = pspectrum(permute(obj.phi(num,1,t_start_:t),[3,1,2]), obj.t_vec(t_start_:t));
+            plot(f,10*log10(p));
+            hold on
+            for mu = 1:obj.param.peak_memory_num
+                plot(obj.peak_freqs(num,mu,t),10*log10(obj.peaks(num,mu,t)),'o');
+            end
+            hold off
+            text(max(f)*0.7, 0, "t = "+string(t), 'FontSize',12);
+            ylim([-100,20])
+            xlim([0,10])
+            legend(string(num))
+        end
+
+        function peakAndFreqPlot(obj,num)
+            % 特定エージェントのピーク及びピーク周波数の時刻履歴を，【エージェント毎に】プロット
+            arguments
+                obj
+                num = 8 % 表示対象のエージェント
+            end
+            figure
+            for i = 1:length(num)
+                subplot(length(num),1,i)
+                plot(1:obj.param.Nt, permute(10*log10(obj.peaks(num(i),:,:)),[2,3,1]))
+                hold on
+                legend(string(1:obj.param.peak_memory_num))
+                ylim([-100,100])
+                xlim([0,1000])
+                ylabel("Power of Peaks [dB]")
+                xlabel("TIme Step")
+                title("i="+string(num(i)))
+            end
+            figure
+            for i = 1:length(num)
+                subplot(length(num),1,i)
+                plot(1:obj.param.Nt, permute(obj.peak_freqs(num(i),:,:),[2,3,1]))
+                legend(string(1:obj.param.peak_memory_num))
+                %ylim([-100,100])
+                xlim([0,1000])
+                ylabel("Frequency of Peaks [Hz]")
+                xlabel("TIme Step")
+                title("i="+string(num(i)))
+            end
+        end
+
+        function peakAndFreqPlot2(obj,num)
+            % 特定エージェントのピーク及びピーク周波数の時刻履歴を，【ピーク毎に】プロット
+            arguments
+                obj
+                num = 8 % 表示対象のエージェント
+            end
+            
+            for mu = 1:obj.param.peak_memory_num
+                figure
+                plot(1:obj.param.Nt, permute(10*log10(obj.peaks(num,mu,:)),[3,1,2]))
+                l = legend(string(num));
+                l.NumColumns = 4;
+                ylim([-100,100])
+                xlim([0,1000])
+                ylabel("Power of Peaks [dB]")
+                xlabel("TIme Step")
+                title("mode "+string(mu))
+            end
+            
+            for mu = 1:obj.param.peak_memory_num
+                figure
+                plot(1:obj.param.Nt, permute(obj.peak_freqs(num,mu,:),[3,1,2]))
+                l = legend(string(num));
+                l.NumColumns = 4;
+                %ylim([-100,100])
+                xlim([0,1000])
+                ylabel("Frequency of Peaks [Hz]")
+                xlabel("TIme Step")
+                title("mode "+string(mu))
+            end
+        end
+
+        function obj = deadlockPlot(obj,num)
+            % デッドロック判定の時系列結果を表示
+            arguments
+                obj
+                num = 8 % 表示対象のエージェント
+            end
+            figure
+            plot(1:obj.param.Nt, permute(obj.is_deadlock(num,1,:),[3,1,2]))
+            l = legend(string(num));
+            l.NumColumns = 2;
+            ylim([-0.1 1.1])
+            xlim([0,1000])
+            ylabel("is deadlock")
+            xlabel("TIme Step")
+        end
+
+        function obj = variancePlot(obj,num)
+            % ピークの大きさ及び分散の時刻プロット
+            arguments
+                obj
+                num = 8 % 表示対象のエージェント
+            end
+            
+            for mu = 1:obj.param.peak_memory_num
+                figure
+                plot(1:obj.param.Nt, permute(obj.peak_variances_db(num,mu,:),[3,1,2]))
+                l = legend(string(num));
+                l.NumColumns = 4;
+                %ylim([-100,100])
+                xlim([0,1000])
+                ylabel("Variance of Peak Power [dB^2]")
+                xlabel("TIme Step")
+                title("mode "+string(mu))
+            end
+            
+            for mu = 1:obj.param.peak_memory_num
+                figure
+                plot(1:obj.param.Nt, permute(obj.freq_variances(num,mu,:),[3,1,2]))
+                l = legend(string(num));
+                l.NumColumns = 4;
+                %ylim([-100,100])
+                xlim([0,1000])
+                ylabel("Variance of Peak Frequency [Hz^2]")
+                xlabel("TIme Step")
+                title("mode "+string(mu))
+            end
+        end
+
         function obj = phaseGapPlot(obj)
             % ロボットの位置プロット
             arguments
@@ -258,6 +439,15 @@ classdef WaveInteractionSimulator < Simulator
             end
             figure
             plot(obj.t_vec, permute(obj.phi(:,1,:),[1,3,2])-mean( permute(obj.phi(:,1,:),[1,3,2]), 1 ))
+        end
+
+        function obj = generateSpectrumMovie(obj,filename, speed)
+            arguments
+                obj
+                filename string = "movie.mp4" % 保存するファイル名
+                speed = 1       % 動画の再生速度
+            end
+            obj.makeMovie(@obj.spectrumPlot, obj.param.dt, obj.param.Nt, filename, speed, true);
         end
     end
 end
