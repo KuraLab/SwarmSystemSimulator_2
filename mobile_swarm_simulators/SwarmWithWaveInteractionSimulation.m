@@ -6,6 +6,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
         attract_field   % 誘導場生成クラスのインスタンス
         cos             % 結合振動子のインスタンス
         is_connected = true     % グラフが連結かどうか
+        kp_adjust       % 勾配追従力の調整係数[台数,1,時刻]
     end
 
     methods
@@ -27,7 +28,11 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             obj.param.kd = 1;   % 粘性項
             obj.param.attract_force_type = "field_xy";% x方向のみ誘導力の形式
             obj.param.is_debug_view = false;    % デバッグ表示をするか？
-
+            % kp調整 %
+            obj.param.do_kp_adjust = false; % デッドロック時のkp調整を実施？
+            obj.param.kp_adjust_out = -1;  % デッドロック時外側
+            obj.param.kp_adjust_in = 2.0;   % デッドロック時内側
+            obj.param.adjust_stepwith = 100;% 最後のデッドロック発生から何ステップ調整を発動するか
         end
         
         function obj = initializeVariables(obj)
@@ -35,6 +40,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             % 状態変数の定義と初期値の代入を行うこと
             obj = obj.initializeVariables@MobileRobots2dSimulator();   % スーパークラス側の読み出し
             obj.cos = obj.cos.setParam("phi_0",rand(obj.param.Na,1));
+            obj.kp_adjust = ones(obj.param.Na,1,obj.param.Nt);          % kp補正係数．標準は1
         end
         
         function obj = defineSystem(obj)
@@ -64,6 +70,15 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             u_t = zeros(obj.param.Na, 2);   % 時刻tにおける入力
             u_nominal = zeros(obj.param.Na, 2); % CBFをかける前のノミナル入力
             Adj = full(adjacency(obj.G));   % 隣接行列
+
+            %%%% 位相勾配の利用 %%%%
+            obj.cos = obj.cos.setGraph(obj.G);  % グラフを渡す
+            obj.cos = obj.cos.setPosition(obj.x(:,:,t),t);  % 位置を渡す
+            obj.cos = obj.cos.stepSimulate(t);  % COS側の更新
+            if obj.param.do_kp_adjust % デッドロックに基づくkp調整
+                obj = obj.kpAdjust(t);
+            end
+
             %%%% 勾配追従力 %%%%
             u_p = zeros(obj.param.Na, 2);
             pos_index = round( (obj.x(:,:,t)-repmat([obj.param.space_x(1) obj.param.space_y(1)],obj.param.Na,1))./obj.attract_field.param.dx ) + 1;
@@ -73,11 +88,11 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                 cx = obj.attract_field.cx(pos_index(i,1), pos_index(i,2));
                 cy = obj.attract_field.cy(pos_index(i,1), pos_index(i,2));
                 if obj.param.attract_force_type == "field_xonly"
-                    u_p(i,:) = obj.param.kp*( cx*[1 0] )/norm([cx,cy]);   % 誘導場をx方向のみ利用
+                    u_p(i,:) = obj.param.kp*obj.kp_adjust(i,:,t)*( cx*[1 0] )/norm([cx,cy]);   % 誘導場をx方向のみ利用
                 elseif obj.param.attract_force_type == "field_xy"
-                    u_p(i,:) = obj.param.kp*( cx*[1 0] + cy*[0 1] )/norm([cx,cy]);  % 誘導場を利用
+                    u_p(i,:) = obj.param.kp*obj.kp_adjust(i,:,t)*( cx*[1 0] + cy*[0 1] )/norm([cx,cy]);  % 誘導場を利用
                 elseif obj.param.attract_force_type == "linear_fbx"
-                    u_p(i,:) = obj.param.kp*( [1 0] );  % ただのx方向への単位ベクトル
+                    u_p(i,:) = obj.param.kp*obj.kp_adjust(i,:,t)*( [1 0] );  % ただのx方向への単位ベクトル
                 end
                 % u_p = kp( c_x ex + c_y ey )
             end
@@ -90,10 +105,6 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             D_ij = sqrt(X_ij.^2+Y_ij.^2)/obj.param.rc + eye(obj.param.Na);   % 正規化相対距離 (零割防止のため対角に1がならぶ)
             u_f(:,1) = obj.param.kf*sum( full(adjacency(obj.G)).*(-X_ij/obj.param.rc).*(D_ij.^(-3)-D_ij.^(-2)).*exp(-D_ij) ,2);
             u_f(:,2) = obj.param.kf*sum( full(adjacency(obj.G)).*(-Y_ij/obj.param.rc).*(D_ij.^(-3)-D_ij.^(-2)).*exp(-D_ij) ,2);
-            %%%% 位相勾配の利用 %%%%
-            obj.cos = obj.cos.setGraph(obj.G);  % グラフを渡す
-            obj.cos = obj.cos.setPosition(obj.x(:,:,t),t);
-            obj.cos = obj.cos.stepSimulate(t);  % COS側の更新
 
             % ノミナル入力の決定
             u_nominal = u_p + u_f;
@@ -116,18 +127,6 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                 u_t(i,:) = obj.cbf.apply(u_nominal(i,:));
                 obj.cbf = obj.cbf.clearConstraints();
             end
-            %{
-            obj.cbf = obj.cbf.setParameters(1,1,obj.param.dt,1,true);
-            % 1番用CBF
-            obj.cbf = obj.cbf.addConstraints(obj.x(2,:,t)-obj.x(1,:,t), obj.dxdt(2,:,t)-obj.dxdt(1,:,t));
-            u_t(1,:) = obj.cbf.apply(u_nominal(1,:));
-            obj.cbf = obj.cbf.clearConstraints();
-            % 2番用CBF
-            obj.cbf = obj.cbf.addConstraints(obj.x(1,:,t)-obj.x(2,:,t), obj.dxdt(1,:,t)-obj.dxdt(2,:,t));
-            u_t(2,:) = obj.cbf.apply(u_nominal(2,:));
-            obj.cbf = obj.cbf.clearConstraints();
-            %}
-            %u_t(12,:) = [0.1,0.1];
 
             %%%% 最終的な入力の生成 %%%%
             obj.u(:,:,t) = u_t - obj.param.kd*obj.dxdt(:,:,t);  % CBF後に粘性が入っている…
@@ -146,6 +145,33 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             if (sigma_(2) <= 10^-5)
                 obj.is_connected = false;
             end
+        end
+
+        function obj = kpAdjust(obj,t)
+            % デッドロック情報に基づくkp調整の実施
+            arguments
+                obj
+                t
+            end
+            if t<obj.param.adjust_stepwith+1
+                return  % データの蓄積不十分ならなにもしない
+            end
+            adjust_do_ = sum(obj.cos.is_deadlock(:,1,t-obj.param.adjust_stepwith:t),3); % 時刻幅内の履歴にデッドロック状態があるか？(論理和のかわりにsum)
+            for i = 1:obj.param.Na
+                if adjust_do_(i)>0  % 調整する場合
+                    if obj.cos.is_deadlock(i,1,t)
+                        % 今デッドロック状態なら，デッドロック状態に応じて調整
+                        obj.kp_adjust(i,1,t) = obj.cos.is_edge(i,2,t)*obj.param.kp_adjust_out + ~obj.cos.is_edge(i,2,t)*obj.param.kp_adjust_in;
+                    else
+                        % 今はデッドロックでないのなら，前の調整値を利用
+                        obj.kp_adjust(i,1,t) = obj.kp_adjust(i,1,t-1);
+                    end
+                else
+                    obj.kp_adjust(i,1,t) = 1;   % 調整しないなら1
+                end
+            end
+            % 調整するなら，out:kp_adjust=kp_adjust_out, in:kp_adjust=kp_adjust_in
+            % 否定~の方が積.*より演算が先
         end
 
             %%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%
@@ -178,6 +204,22 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             hold off
         end
 
+        function obj = kpAdjustPlot(obj,num)
+            % kp_adjustの値をプロット
+            arguments
+                obj
+                num = 8 % 表示対象のエージェント
+            end
+            figure
+            plot(1:obj.param.Nt, permute(obj.kp_adjust(num,1,:),[3,1,2]))
+            l = legend(string(num));
+            l.NumColumns = 2;
+            ylim([-1 2.1])
+            xlim([0,1000])
+            ylabel("k_p adjust")
+            xlabel("TIme Step")
+        end
+
         function obj = edgeJudgePlot(obj, t, dim)
             % ロボットの位置プロット
             arguments
@@ -191,6 +233,35 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             colorbar
             text(obj.param.space_x(2)*0.7, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
             hold off
+        end
+        
+        function obj = trajectryJudgePlot(obj, step_width, num)
+            % 軌跡を指定した時間幅でプロット
+            % kp_adjustを利用して色を変える
+            arguments
+                obj
+                step_width            % 軌跡の描画範囲
+                num = 1:obj.param.Na  % 描画対象のエージェント
+            end
+            %delete(gca)
+            for t = step_width  % 軌跡の描画．色の都合でやむなくfoe文
+                for i = num
+                    l = line([obj.x(i,1,t-1) obj.x(i,1,t)],[obj.x(i,2,t-1) obj.x(i,2,t)]);
+                    l.LineWidth = 0.7;
+                    if obj.kp_adjust(i,1,t) == obj.param.kp_adjust_out
+                        l.Color = "#FF0000";    % 外なら赤
+                        l.LineWidth = 1.5;
+                    elseif obj.kp_adjust(i,1,t) == obj.param.kp_adjust_in
+                        l.Color = "#0000FF";    % 内なら青
+                        l.LineWidth = 1.5;
+                    else
+                        l.Color = "#111111";    % それ以外なら黒
+                    end
+                end
+            end
+            hold on
+            obj = obj.placePlot(step_width(end),false);  % ステップ幅の最終時刻におけるエージェント位置をプロット
+            title("t=["+string(step_width(1)-1)+", "+string(step_width(end))+"] step")
         end
 
         function obj = generateMovieEstimate(obj, filename, speed)
