@@ -267,9 +267,9 @@ classdef WaveInteractionSimulator < Simulator
             if t < obj.param.minimum_store+obj.param.deadlock_stepwith
                 return  % データがたまっていなかったらリターン
             end
-            if t>700
-                disp("debug")
-            end
+            %if t>700
+            %    disp("debug")
+            %end
             peak_variances_ = zeros(obj.param.Na,obj.param.peak_memory_num);    % ピークの大きさの分散
             freq_variances_ = zeros(obj.param.Na,obj.param.peak_memory_num);    % ピークの位置の分散
             peak_variances_ = var(10*log10(obj.peaks(:,:,t-obj.param.deadlock_stepwith+1:t)),0,3);   % 時刻に沿った分散を計算．N-1で正規化

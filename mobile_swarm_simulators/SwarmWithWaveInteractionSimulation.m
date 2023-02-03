@@ -7,6 +7,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
         cos             % 結合振動子のインスタンス
         is_connected = true     % グラフが連結かどうか
         kp_adjust       % 勾配追従力の調整係数[台数,1,時刻]
+        is_deadlock     % デッドロック状態か？ COSからもらったり停止検出を使ったり [台数,1,時刻]
     end
 
     methods
@@ -29,10 +30,14 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             obj.param.attract_force_type = "field_xy";% x方向のみ誘導力の形式
             obj.param.is_debug_view = false;    % デバッグ表示をするか？
             % kp調整 %
+            obj.param.deadlock_source = "cos";   % デッドロック判定のソースは？
             obj.param.do_kp_adjust = false; % デッドロック時のkp調整を実施？
             obj.param.kp_adjust_out = -1;  % デッドロック時外側
             obj.param.kp_adjust_in = 2.0;   % デッドロック時内側
             obj.param.adjust_stepwith = 100;% 最後のデッドロック発生から何ステップ調整を発動するか
+            % CBF %
+            obj.param.cbf_rs = 0.8;         % 安全距離
+            obj.param.cbf_gamma = 5;        % ナイーブパラメタ
         end
         
         function obj = initializeVariables(obj)
@@ -41,6 +46,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             obj = obj.initializeVariables@MobileRobots2dSimulator();   % スーパークラス側の読み出し
             obj.cos = obj.cos.setParam("phi_0",rand(obj.param.Na,1));
             obj.kp_adjust = ones(obj.param.Na,1,obj.param.Nt);          % kp補正係数．標準は1
+            obj.is_deadlock = zeros(obj.param.Na,1,obj.param.Nt);
         end
         
         function obj = defineSystem(obj)
@@ -71,10 +77,18 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             u_nominal = zeros(obj.param.Na, 2); % CBFをかける前のノミナル入力
             Adj = full(adjacency(obj.G));   % 隣接行列
 
-            %%%% 位相勾配の利用 %%%%
+            %%%% COSの更新 %%%%
             obj.cos = obj.cos.setGraph(obj.G);  % グラフを渡す
             obj.cos = obj.cos.setPosition(obj.x(:,:,t),t);  % 位置を渡す
             obj.cos = obj.cos.stepSimulate(t);  % COS側の更新
+            
+            %%%% デッドロック判定とその利用 %%%%
+            obj = obj.stopDetect(t);    % 停止検知
+            if obj.param.deadlock_source == "cos"
+                obj.is_deadlock(:,1,t) = obj.cos.is_deadlock(:,1,t);    % COSによるデッドロック判定を利用
+            elseif obj.param.deadlock_source == "stop"
+                obj.is_deadlock(:,1,t) = obj.is_stop(:,1,t);            % 停止検知をデッドロック判定として利用
+            end
             if obj.param.do_kp_adjust % デッドロックに基づくkp調整
                 obj = obj.kpAdjust(t);
             end
@@ -114,13 +128,13 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             x_io = obj.calcVectorToWalls(t);    % 壁との相対位置ベクトル
             for i = 1:obj.param.Na
                 % ロボット間衝突回避CBF %
-                obj.cbf = obj.cbf.setParameters(1,1,obj.param.dt,1,true);
+                obj.cbf = obj.cbf.setParameters(1,obj.param.cbf_rs,obj.param.dt,obj.param.cbf_gamma,true);
                 x_ij = obj.x(:,:,t) - obj.x(i,:,t);          % 相対位置ベクトル
                 dxdt_ij = obj.dxdt(:,:,t) - obj.dxdt(i,:,t); % 相対速度ベクトル
                 obj.cbf = obj.cbf.addConstraints([x_ij(Adj(:,i)==1,1), x_ij(Adj(:,i)==1,2)], [dxdt_ij(Adj(:,i)==1,1), dxdt_ij(Adj(:,i)==1,2)]);
                 % 隣接ロボットとの相対ベクトルのみCBF制約として利用
                 % 壁との衝突回避CBF %
-                obj.cbf = obj.cbf.setParameters(1,0.5,obj.param.dt,1,false);
+                obj.cbf = obj.cbf.setParameters(1,obj.param.cbf_rs,obj.param.dt,obj.param.cbf_gamma,false);
                 obj.cbf = obj.cbf.addConstraints(permute(x_io(i,:,:),[3,2,1]), -repmat(obj.dxdt(i,:,t),length(x_io(i,:,:)),1));
                 % 壁との相対位置ベクトルと，自身の速度ベクトル(壁との相対速度ベクトル)をCBFに入れる
                 % CBFの適用 %
@@ -156,10 +170,10 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             if t<obj.param.adjust_stepwith+1
                 return  % データの蓄積不十分ならなにもしない
             end
-            adjust_do_ = sum(obj.cos.is_deadlock(:,1,t-obj.param.adjust_stepwith:t),3); % 時刻幅内の履歴にデッドロック状態があるか？(論理和のかわりにsum)
+            adjust_do_ = sum(obj.is_deadlock(:,1,t-obj.param.adjust_stepwith:t),3); % 時刻幅内の履歴にデッドロック状態があるか？(論理和のかわりにsum)
             for i = 1:obj.param.Na
                 if adjust_do_(i)>0  % 調整する場合
-                    if obj.cos.is_deadlock(i,1,t)
+                    if obj.is_deadlock(i,1,t)
                         % 今デッドロック状態なら，デッドロック状態に応じて調整
                         obj.kp_adjust(i,1,t) = obj.cos.is_edge(i,2,t)*obj.param.kp_adjust_out + ~obj.cos.is_edge(i,2,t)*obj.param.kp_adjust_in;
                     else
@@ -173,6 +187,17 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             % 調整するなら，out:kp_adjust=kp_adjust_out, in:kp_adjust=kp_adjust_in
             % 否定~の方が積.*より演算が先
         end
+            
+            %%%%%%%%%%%%%%%% 解析 %%%%%%%%%%%%%%%
+            function n = obtainNumberOfPassedRobots(obj,narrow_end,t)
+                % 通り抜けに成功したエージェント数
+                arguments
+                    obj
+                    narrow_end = 0      % 狭所の終わり
+                    t = obj.param.Nt    % 判定時刻
+                end
+                n = sum(obj.x(:,1,t)>narrow_end);
+            end
 
             %%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%
         function obj = phasePlacePlot(obj, t)
@@ -197,7 +222,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                 dim = 2         % 次元
             end
             delete(gca)
-            obj = obj.placePlot(t,true, (-1+2*obj.cos.is_edge(:,dim,t)).*obj.cos.is_deadlock(:,1,t));
+            obj = obj.placePlot(t,false, (-1+2*obj.cos.is_edge(:,dim,t)).*obj.cos.is_deadlock(:,1,t));
             clim([-1,1])
             colorbar
             text(obj.param.space_x(2)*0.65, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
@@ -262,6 +287,42 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             hold on
             obj = obj.placePlot(step_width(end),false);  % ステップ幅の最終時刻におけるエージェント位置をプロット
             title("t=["+string(step_width(1)-1)+", "+string(step_width(end))+"] step")
+        end
+        
+        function obj = deadlockDetectionPlot(obj,source,stepwidth,num)
+            % 各エージェントのデッドロック検出時刻を提示
+            arguments
+                obj
+                source {mustBeMember(source,["result","cos","stop"])} = "result"  % なにを表示？
+                stepwidth = 1:obj.param.Nt  % 時刻幅
+                num = 1:obj.param.Na        % エージェント集合
+            end
+            if source == "result"
+                judge_ = obj.is_deadlock;
+            elseif source == "cos"
+                judge_ = obj.cos.is_deadlock;
+            elseif source == "stop"
+                judge_ = obj.is_stop;
+            end
+            figure
+            %{
+            for n = num
+                l = line([stepwidth(1) stepwidth(end)],[n n]);
+                l.LineWidth = 0.7;
+                l.Color = "#CCCCCC";
+                hold on
+                t_deadlock = stepwidth(permute(judge_(n,1,stepwidth),[3,1,2])==1); % デッドロックと判定されていた時刻
+                plot(t_deadlock, repmat(n,length(t_deadlock)),'o','Color',"#D95319",'MarkerFaceColor',"#D95319");
+            end
+            %}
+            
+            imagesc(permute(1-judge_(num,1,stepwidth),[1,3,2]));
+            colormap("gray")
+            
+            hold off
+            ylabel("Robots Number")
+            xlabel("Timestep")
+           
         end
 
         function obj = generateMovieEstimate(obj, filename, speed)
