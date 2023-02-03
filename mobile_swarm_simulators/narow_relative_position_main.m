@@ -153,6 +153,8 @@ for env = env_list
 end
 
 %% 複数回解析
+cond(2) = RunningCondition();
+cond(1).setParameter("source")
 results_new = table('size',[number_of_sets*sim_per_sets,3],'VariableTypes',["string","string",'double']);
 results_new.Properties.VariableNames = ["env","source","passing robots"];
 i = 0;
