@@ -92,10 +92,12 @@ classdef CollisionAvoidanceCBF
             dim = length(u_nominal);
             delta_u = zeros(dim,1); % u-\bar{u}ノミナル入力との差 [空間次元,1]ベクトル
             [delta_u,~,flag] = quadprog(eye(dim), zeros(dim,1), obj.A, obj.b-obj.A*u_nominal.',[],[],[],[],[],obj.options);    % A\delta u\leq b-A\hat{u}
-            u = (u_nominal.' + delta_u).';
             %{  %　デバッグ
             if flag ~= 1
-                disp("missied")
+                disp("CBF missied "+string(flag))
+                u = 0*u_nominal;    % だめなら入力なしに
+            else
+                u = (u_nominal.' + delta_u).';  % CBF解あり
             end
             %}
         end
