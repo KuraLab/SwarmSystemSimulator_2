@@ -395,7 +395,7 @@ classdef WaveInteractionSimulator < Simulator
             l = legend(string(num));
             l.NumColumns = 2;
             ylim([-0.1 1.1])
-            xlim([0,1000])
+            xlim([0,obj.param.Nt])
             ylabel("is deadlock")
             xlabel("TIme Step")
         end
@@ -413,7 +413,7 @@ classdef WaveInteractionSimulator < Simulator
                 l = legend(string(num));
                 l.NumColumns = 4;
                 %ylim([-100,100])
-                xlim([0,1000])
+                xlim([0,obj.param.Nt])
                 ylabel("Variance of Peak Power [dB^2]")
                 xlabel("TIme Step")
                 title("mode "+string(mu))

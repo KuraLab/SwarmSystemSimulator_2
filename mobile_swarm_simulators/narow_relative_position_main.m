@@ -12,13 +12,13 @@ simulation.setFigureProperty("large");                  % 描画の基本設定�
 
 
 %% シミュレーションの実施 : 単発
-simulation = simulation.setParam("environment_file","setting_files/environments/narrow_space_hosome.m");   % パラメタ変更
-simulation = simulation.setParam("placement_file","setting_files/init_conditions/narrow_40.m");   % パラメタ変更
+simulation = simulation.setParam("environment_file","setting_files/environments/narrow_space_hosome_w_4.m");   % パラメタ変更
+simulation = simulation.setParam("placement_file","setting_files/init_conditions/narrow_20.m");   % パラメタ変更
 % COS %
-simulation.cos = simulation.cos.setParam("kappa",100);
+simulation.cos = simulation.cos.setParam("kappa",80);
 simulation.cos = simulation.cos.setParam("do_estimate",true);
 simulation.cos = simulation.cos.setParam("time_histry",256);
-simulation.cos = simulation.cos.setParam("power_threshold",10^-7);
+simulation.cos = simulation.cos.setParam("power_threshold",10^-3);
 %simulation.cbf = simulation.cbf.disable();
 % 停止検知 %
 simulation = simulation.setParam("stop_timehistry",256);
@@ -27,21 +27,24 @@ simulation = simulation.setParam("stop_threshold",10^-3);
 simulation = simulation.setParam("kp",8);   % Swarm : 勾配追従力ゲイン
 simulation = simulation.setParam("kf",0);  % Swarm : 群形成力ゲイン
 simulation = simulation.setParam("kd",10);   % Swarm : 粘性ゲイン
-simulation = simulation.setParam("Nt",2000);
+simulation = simulation.setParam("Nt",3000);
 simulation = simulation.setParam("is_debug_view",false);
-simulation = simulation.setParam("initial_pos_variance", 0.2);
-simulation = simulation.setParam("attract_force_type", "linear_fbx");
+simulation = simulation.setParam("initial_pos_variance", 0);
+%simulation = simulation.setParam("attract_force_type", "linear_fbx");
+simulation = simulation.setParam("attract_force_type", "trip");
 % CBF %
 simulation = simulation.setParam("cbf_rs", 0.8);  % 安全距離
 simulation = simulation.setParam("cbf_gamma", 5); % ナイーブパラメタ
 % kp調整 %
-simulation = simulation.setParam("deadlock_source","cos");
+simulation = simulation.setParam("deadlock_source","stop");
 simulation = simulation.setParam("do_kp_adjust",true);  % kp調整を実施？
 simulation = simulation.setParam("kp_adjust_out",-0.3);
 %simulation = simulation.setParam("kp_adjust_in",-0.3);
 simulation = simulation.setParam("kp_adjust_in",1.2);
 simulation = simulation.setParam("adjust_stepwith",80);
 %simulation = simulation.setParam("dxdt_0",[[0 0];[0 0]]);   % パラメタ変更
+% trip %
+simulation = simulation.setParam("trip_mode","straight");
 % 本番 %
 simulation = simulation.readSettingFiles(); % 設定ファイルの読み込み
 simulation = simulation.initializeVariables();  % 初期値の計算
@@ -53,13 +56,14 @@ simulation.edgeDeadlockPlot(1800,2);
 simulation.placePlot(1);
 % simulation.cos = simulation.cos.plot();
 % simulation = simulation.generateMovieEstimate();
+% simulation = simulation.generateMovieTrip();
 simulation = simulation.generateMovieEstimate();
 simulation = simulation.setParam("is_debug_view",true);
 simulation = simulation.calcControlInput(750);
 simulation.cos.relativePositionEstimate(750,[8,9,10]);  % 推定デバッグ表示
 simulation.cos.peakAndFreqPlot([8,9,10]);   % エージェント毎ピーク履歴
 simulation.cos.peakAndFreqPlot2([1,5:20]);   % モード毎ピーク履歴
-% simulation.cos.spectrumPlot(750,8);   % 特定時刻スペクトラムプロット
+% simulation.cos.spectrumPlot(1500,8);   % 特定時刻スペクトラムプロット
 % simulation.cos.generateSpectrumMovie();
 % simulation.cos.deadlockPlot([1,5:20]);
 % simulation.cos.variancePlot([1:20]);
@@ -68,7 +72,23 @@ simulation.cos.peakAndFreqPlot2([1,5:20]);   % モード毎ピーク履歴
 % simulation.deadlockDetectionPlot("result");
 % simulation.stopDetect(600);
 % simulation.variancePlot([1:20]);
+% simulation.plotPositionVariance();
 simulation.obtainNumberOfPassedRobots();
+%{
+figure
+subplot(3,2,1)
+simulation.tripPlot(1);
+subplot(3,2,2)
+simulation.tripPlot(300);
+subplot(3,2,3)
+simulation.tripPlot(600);
+subplot(3,2,4)
+simulation.tripPlot(900);
+subplot(3,2,5)
+simulation.tripPlot(1200);
+subplot(3,2,6)
+simulation.tripPlot(1500);
+%}
 %{ 
 figure
 subplot(2,2,1)
@@ -91,12 +111,10 @@ simulation = SwarmWithWaveInteractionSimulation();                 % オブジ�
 simulation.setFigureProperty("large");                  % 描画の基本設定を変更
 
 
-env_list = ["setting_files/environments/narrow_space_hosome_w_2_1.m",...
-    "setting_files/environments/narrow_space_hosome_w_2_3.m",...
-    "setting_files/environments/narrow_space_hosome_w_2_5.m"];
-source_list = ["cos","stop","cos_inout"];
+env_list = ["setting_files/environments/narrow_space_hosome_w_4.m"];
+source_list = ["cos","stop"];
 number_of_sets = length(env_list)*length(source_list);
-sim_per_sets = 15;
+sim_per_sets = 3;
 results = table('size',[number_of_sets,3],'VariableTypes',["string","string",'cell']);
 results.Properties.VariableNames = ["env","source","passing robots"];
 sets_count = 0;
@@ -110,9 +128,9 @@ for env = env_list
 
             %%% シミュレーション %%%
             simulation = simulation.setParam("environment_file",env);   % パラメタ変更
-            simulation = simulation.setParam("placement_file","setting_files/init_conditions/narrow_40.m");   % パラメタ変更
+            simulation = simulation.setParam("placement_file","setting_files/init_conditions/narrow_20.m");   % パラメタ変更
             % COS %
-            simulation.cos = simulation.cos.setParam("kappa",100);
+            simulation.cos = simulation.cos.setParam("kappa",80);
             simulation.cos = simulation.cos.setParam("do_estimate",true);
             simulation.cos = simulation.cos.setParam("time_histry",256);
             simulation.cos = simulation.cos.setParam("power_threshold",10^-7);
@@ -124,10 +142,11 @@ for env = env_list
             simulation = simulation.setParam("kp",8);   % Swarm : 勾配追従力ゲイン
             simulation = simulation.setParam("kf",0);  % Swarm : 群形成力ゲイン
             simulation = simulation.setParam("kd",10);   % Swarm : 粘性ゲイン
-            simulation = simulation.setParam("Nt",2000);
+            simulation = simulation.setParam("Nt",3000);
             simulation = simulation.setParam("is_debug_view",false);
             simulation = simulation.setParam("initial_pos_variance", 0.2);
-            simulation = simulation.setParam("attract_force_type", "linear_fbx");
+            simulation = simulation.setParam("attract_force_type", "trip");
+            simulation = simulation.setParam("trip_mode","straight");
             % CBF %
             simulation = simulation.setParam("cbf_rs", 0.8);  % 安全距離
             simulation = simulation.setParam("cbf_gamma", 5); % ナイーブパラメタ
@@ -149,13 +168,15 @@ for env = env_list
             %simulation = simulation.setParam("kp_adjust_in",1.2);
             simulation = simulation.setParam("adjust_stepwith",80);
             %simulation = simulation.setParam("dxdt_0",[[0 0];[0 0]]);   % パラメタ変更
+            % trip %
+            simulation = simulation.setParam("trip_mode","straight");
             % 本番 %
             simulation = simulation.readSettingFiles(); % 設定ファイルの読み込み
             simulation = simulation.initializeVariables();  % 初期値の計算
             simulation = simulation.defineSystem();  % システム設定（誘導場の生成）
             simulation = simulation.simulate(); % シミュレーションの実施
             
-            save("data_0203/"+string(sets_count)+"_"+string(n)+".mat","simulation");
+            save("data_0204/"+string(sets_count)+"_"+string(n)+".mat","simulation");
             passing(1,n) = simulation.obtainNumberOfPassedRobots();
         end
         results(sets_count,:) = {env,source,num2cell(passing,[1 2])};

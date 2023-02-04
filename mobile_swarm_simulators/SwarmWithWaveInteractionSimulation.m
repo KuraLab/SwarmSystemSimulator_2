@@ -8,6 +8,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
         is_connected = true     % グラフが連結かどうか
         kp_adjust       % 勾配追従力の調整係数[台数,1,時刻]
         is_deadlock     % デッドロック状態か？ COSからもらったり停止検出を使ったり [台数,1,時刻]
+        trip_state      % tripモードのとき，その状態 [台数,1,時刻]
     end
 
     methods
@@ -35,6 +36,8 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             obj.param.kp_adjust_out = -1;  % デッドロック時外側
             obj.param.kp_adjust_in = 2.0;   % デッドロック時内側
             obj.param.adjust_stepwith = 100;% 最後のデッドロック発生から何ステップ調整を発動するか
+            % trip %
+            obj.param.trip_mode = "straight";   % tripモードの指定時．"straight","round"
             % CBF %
             obj.param.cbf_rs = 0.8;         % 安全距離
             obj.param.cbf_gamma = 5;        % ナイーブパラメタ
@@ -47,6 +50,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             obj.cos = obj.cos.setParam("phi_0",rand(obj.param.Na,1));
             obj.kp_adjust = ones(obj.param.Na,1,obj.param.Nt);          % kp補正係数．標準は1
             obj.is_deadlock = zeros(obj.param.Na,1,obj.param.Nt);
+            obj.trip_state = zeros(obj.param.Na,1,obj.param.Nt);
         end
         
         function obj = defineSystem(obj)
@@ -92,6 +96,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             if obj.param.do_kp_adjust % デッドロックに基づくkp調整
                 obj = obj.kpAdjust(t);
             end
+            obj = obj.tripUpdate(t);    % trip状態の更新
 
             %%%% 勾配追従力 %%%%
             u_p = zeros(obj.param.Na, 2);
@@ -107,6 +112,11 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                     u_p(i,:) = obj.param.kp*obj.kp_adjust(i,:,t)*( cx*[1 0] + cy*[0 1] )/norm([cx,cy]);  % 誘導場を利用
                 elseif obj.param.attract_force_type == "linear_fbx"
                     u_p(i,:) = obj.param.kp*obj.kp_adjust(i,:,t)*( [1 0] );  % ただのx方向への単位ベクトル
+                elseif obj.param.attract_force_type == "trip"
+                    u_p(i,:) = obj.param.kp*( (obj.trip_state(i,1,t)==0)*[1 0] +...
+                                                (obj.trip_state(i,1,t)==1)*[0 -1] +...
+                                                (obj.trip_state(i,1,t)==2)*[-1 0] +...
+                                                (obj.trip_state(i,1,t)==3)*[0 1]);  % [0,1,2,3] : [right, down, left, up]
                 end
                 % u_p = kp( c_x ex + c_y ey )
             end
@@ -187,6 +197,29 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             % 調整するなら，out:kp_adjust=kp_adjust_out, in:kp_adjust=kp_adjust_in
             % 否定~の方が積.*より演算が先
         end
+        
+        function obj = tripUpdate(obj,t)
+            % デッドロック状態に基づくtrip状態のアップデート
+            % @brief state = [0,1,2,3] : [right, down, left, up]
+            arguments
+                obj
+                t
+            end
+            if t<2      % データ蓄積不十分ならリターン
+                return
+            end
+            update_do_ = (obj.is_deadlock(:,1,t)==1).*(obj.is_deadlock(:,1,t-1)==0);  % デッドロック判定の立ち上がりを検知
+            for i = 1:obj.param.Na  % 多次元配列ではロジック参照ができない
+                if obj.param.trip_mode == "straight"
+                    obj.trip_state(i,1,t) = obj.trip_state(i,1,t-1)+2*update_do_(i);  % 状態2個進める
+                elseif obj.param.trip_mode == "round"
+                    obj.trip_state(i,1,t) = obj.trip_state(i,1,t-1)+1*update_do_(i);  % 状態1個進める
+                end
+                if (obj.trip_state(i,1,t)==4)
+                    obj.trip_state(i,1,t)=0;    % 戻す
+                end
+            end
+        end
             
             %%%%%%%%%%%%%%%% 解析 %%%%%%%%%%%%%%%
             function n = obtainNumberOfPassedRobots(obj,narrow_end,t)
@@ -197,6 +230,11 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                     t = obj.param.Nt    % 判定時刻
                 end
                 n = sum(obj.x(:,1,t)>narrow_end);
+            end
+
+            function vars = obtainPositionVariances(obj)
+                % 各時刻におけるエージェント位置の分散を返す
+                vars = permute(var(obj.x(:,:,:), 0, 1),[2,3,1]);
             end
 
             %%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%
@@ -225,6 +263,25 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             obj = obj.placePlot(t,false, (-1+2*obj.cos.is_edge(:,dim,t)).*obj.cos.is_deadlock(:,1,t));
             clim([-1,1])
             colorbar
+            text(obj.param.space_x(2)*0.65, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
+            hold off
+        end
+
+        function obj = tripPlot(obj,t)
+            % trip stateを使ってプロット
+            arguments
+                obj
+                t               % 時刻
+            end
+            %delete(gca)
+            obj = obj.placePlot(t,false);
+            %{
+            delete(gca)
+            obj = obj.placePlot(t,false, obj.trip_state(:,1,t));
+            clim([0,4])
+            colorbar
+            colormap cool
+            %}
             text(obj.param.space_x(2)*0.65, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
             hold off
         end
@@ -260,6 +317,16 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             hold off
         end
         
+        function obj = plotPositionVariance(obj)
+            % エージェント位置の分散を返す
+            vars = obj.obtainPositionVariances();
+            figure
+            plot(1:obj.param.Nt, vars(:,:))
+            legend("x","y")
+            xlabel("TIme Step")
+            ylabel("Variances m^2")
+        end
+
         function obj = trajectryJudgePlot(obj, step_width, num)
             % 軌跡を指定した時間幅でプロット
             % kp_adjustを利用して色を変える
@@ -334,6 +401,17 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             end
              %obj.makeMovie(@obj.edgeJudgePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
             obj.makeMovie(@obj.edgeDeadlockPlot, obj.param.dt, obj.param.Nt, filename, speed, true);
+        end
+
+        function obj = generateMovieTrip(obj, filename, speed)
+            % tripのムービーを生成
+            arguments
+                obj
+                filename string = "movie.mp4" % 保存するファイル名
+                speed = 1       % 動画の再生速度
+            end
+             %obj.makeMovie(@obj.edgeJudgePlot, obj.param.dt, obj.param.Nt, filename, speed, true);
+            obj.makeMovie(@obj.tripPlot, obj.param.dt, obj.param.Nt, filename, speed, true);
         end
 
         function obj = generateMovie(obj, filename, speed)
