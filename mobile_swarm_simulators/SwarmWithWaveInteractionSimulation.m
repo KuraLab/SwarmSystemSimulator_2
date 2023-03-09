@@ -89,7 +89,7 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             %%%% デッドロック判定とその利用 %%%%
             obj = obj.stopDetect(t);    % 停止検知
             if obj.param.deadlock_source == "cos"
-                obj.is_deadlock(:,1,t) = obj.cos.is_deadlock(:,1,t);    % COSによるデッドロック判定を利用
+                obj.is_deadlock(:,1,t) = obj.is_stop(:,1,t).*obj.cos.is_deadlock(:,1,t);    % COSによるデッドロック判定+停止条件
             elseif obj.param.deadlock_source == "stop"
                 obj.is_deadlock(:,1,t) = obj.is_stop(:,1,t);            % 停止検知をデッドロック判定として利用
             end
@@ -166,9 +166,9 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             Lap_ = full(laplacian(obj.G));  % グラフラプラシアン
             [~,Sigma] = eig(Lap_);  % 固有値展開
             sigma_ = sort(diag(Sigma));
-            if (sigma_(2) <= 10^-5)
-                obj.is_connected = false;
-            end
+            %if (sigma_(2) <= 10^-5)        % 0303時点で使っていないので一度外す
+            %    obj.is_connected = false;
+            %end
         end
 
         function obj = kpAdjust(obj,t)
@@ -212,12 +212,17 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             for i = 1:obj.param.Na  % 多次元配列ではロジック参照ができない
                 if obj.param.trip_mode == "straight"
                     obj.trip_state(i,1,t) = obj.trip_state(i,1,t-1)+2*update_do_(i);  % 状態2個進める
+                    if (obj.trip_state(i,1,t)==4)
+                         obj.trip_state(i,1,t)=0;    % 戻す
+                    end
                 elseif obj.param.trip_mode == "round"
                     obj.trip_state(i,1,t) = obj.trip_state(i,1,t-1)+1*update_do_(i);  % 状態1個進める
+                    if (obj.trip_state(i,1,t)==4)
+                         obj.trip_state(i,1,t)=4;    % 止める
+                         %obj.trip_state(i,1,t)=0;    % 戻す
+                    end
                 end
-                if (obj.trip_state(i,1,t)==4)
-                    obj.trip_state(i,1,t)=0;    % 戻す
-                end
+                
             end
         end
             
@@ -274,16 +279,19 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
                 t               % 時刻
             end
             %delete(gca)
-            obj = obj.placePlot(t,false);
             %{
+            obj = obj.placePlot(t,false);
+            title("t = "+string(t))
+            %}
+            %%%{
             delete(gca)
             obj = obj.placePlot(t,false, obj.trip_state(:,1,t));
             clim([0,4])
-            colorbar
+            %colorbar
             colormap cool
-            %}
-            text(obj.param.space_x(2)*0.65, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
-            hold off
+            text(obj.param.space_x(2)*0.6, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
+            %%%}
+            %
         end
 
         function obj = kpAdjustPlot(obj,num)
@@ -322,9 +330,10 @@ classdef SwarmWithWaveInteractionSimulation < MobileRobots2dSimulator
             vars = obj.obtainPositionVariances();
             figure
             plot(1:obj.param.Nt, vars(:,:))
-            legend("x","y")
+            legend(["$x$","$y$"],'Interpreter','latex','FontSize',16)
             xlabel("TIme Step")
-            ylabel("Variances m^2")
+            ylabel("$s^2$ ${\rm m}^2$",'Interpreter','latex')
+            ylim([0,40])
         end
 
         function obj = trajectryJudgePlot(obj, step_width, num)

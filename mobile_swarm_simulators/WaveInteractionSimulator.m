@@ -50,6 +50,7 @@ classdef WaveInteractionSimulator < Simulator
             obj.param.power_variance_db = 10^-3; % デッドロック判定時のパワー分散閾値
             obj.param.freq_variance_hz = 10^-5;  % デッドロック判定時の周波数分散閾値
             obj.param.deadlock_stepwith = 100;  % デッドロック判定．何ステップ分の定常状態を要請するか？
+            obj.param.deadlock_usepower = true; % 判定にパワーも使うか？
             %%%%%%%% 読み込みファイル名 %%%%%%%%
             %obj.param.environment_file = "setting_files/environments/narrow_space.m";  % 環境ファイル
             %obj.param.placement_file = "setting_files/init_conditions/narrow_20.m";    % 初期位置ファイル
@@ -274,21 +275,30 @@ classdef WaveInteractionSimulator < Simulator
             freq_variances_ = zeros(obj.param.Na,obj.param.peak_memory_num);    % ピークの位置の分散
             peak_variances_ = var(10*log10(obj.peaks(:,:,t-obj.param.deadlock_stepwith+1:t)),0,3);   % 時刻に沿った分散を計算．N-1で正規化
             freq_variances_ = var(obj.peak_freqs(:,:,t-obj.param.deadlock_stepwith+1:t),0,3);
-            obj.is_deadlock(:,:,t) = prod(peak_variances_<obj.param.power_variance_db,2).*prod(freq_variances_<obj.param.freq_variance_hz,2);
-            obj.peak_variances_db(:,:,t) = peak_variances_;
+            if obj.param.deadlock_usepower == true
+                obj.is_deadlock(:,:,t) = prod(peak_variances_<obj.param.power_variance_db,2).*prod(freq_variances_<obj.param.freq_variance_hz,2);
+            else
+                obj.is_deadlock(:,:,t) = prod(freq_variances_<obj.param.freq_variance_hz,2);
+            end
+                obj.peak_variances_db(:,:,t) = peak_variances_;
             obj.freq_variances(:,:,t) = freq_variances_;
             % 各モードの大きさ，周波数について全ての分散が閾値を下回っていたら，デッドロックと判定
         end
 
         %%%%%%%%%%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%%%%
 
-        function obj = plot(obj)
+        function obj = plot(obj,is_power)
             % ロボットの位置プロット
             arguments
                 obj
+                is_power = false    % power形式のプロット
             end
             figure
-            plot(obj.t_vec, permute(obj.phi(:,1,:),[1,3,2]))
+            %plot(obj.t_vec, permute(obj.phi(:,1,:),[1,3,2]))
+            plot(1:obj.param.Nt, permute(obj.phi(:,1,:),[1,3,2]))
+            if is_power == true
+             plot(1:obj.param.Nt, permute(10*log10(abs(obj.phi(:,1,:))),[1,3,2]))
+            end
         end
 
         function obj = spectrumPlot(obj,t,num)
@@ -425,7 +435,7 @@ classdef WaveInteractionSimulator < Simulator
                 l = legend(string(num));
                 l.NumColumns = 4;
                 %ylim([-100,100])
-                xlim([0,1000])
+                xlim([0,obj.param.Nt])
                 ylabel("Variance of Peak Frequency [Hz^2]")
                 xlabel("TIme Step")
                 title("mode "+string(mu))
