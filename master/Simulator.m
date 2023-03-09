@@ -49,6 +49,12 @@ classdef Simulator
             end
         end
 
+        function obj = showSimulationTime(obj,t)
+            % シミュレーション進行中，現在時刻をウィンドウに表示
+            clc
+            disp("t = "+string(t)+"/"+string(obj.param.Nt));
+        end
+
         function obj = setFigureProperty(obj, preset)
             % 図のプロパティを変更．MATLABのオリジナルはちょっと文字が小さいので
             % 継承先では自分オリジナルのプリセットを作っても良いと思う
@@ -71,7 +77,7 @@ classdef Simulator
             end
         end
         
-        function obj = makeMovie(obj, func, dt, Nt, filename, speed, capture_all)
+        function obj = makeMovie(obj, func, dt, Nt, filename, speed, capture_all, padding_frame)
             % 動画の作成
             arguments
                 obj
@@ -81,17 +87,20 @@ classdef Simulator
                 filename string = "movie.mp4"   % 保存するファイル名
                 speed = 1                       % 動画の再生速度
                 capture_all = false             % 画面全体をキャプチャするか？
+                padding_frame = round(1/dt*speed)   % 動画の開始終了前後に静止フレームを追加．使わない場合は0に
             end
             f = figure;
             disp("アニメーション描画を開始します")
-            F(Nt) = struct('cdata',[],'colormap',[]);
-            for t = 1:Nt
-                func(t);
+            Nk = Nt + 2*padding_frame;  % 前後に静止フレームを追加
+            t_list = [1*ones(1,padding_frame),1:Nt,Nt*ones(1,padding_frame)];   % 1とNtでパディング
+            F(Nk) = struct('cdata',[],'colormap',[]);
+            for k = 1:Nk
+                func(t_list(k));
                 drawnow;
                 if capture_all
-                    F(t) = getframe(f); % gcfをキャプチャ
+                    F(k) = getframe(f); % gcfをキャプチャ
                 else
-                    F(t) = getframe;    % gcaをキャプチャ
+                    F(k) = getframe;    % gcaをキャプチャ
                 end
                 if strcmp(get(gcf,'currentcharacter'),'q')  % key stop
                     break; % 中止したいときはqを押す
@@ -101,7 +110,7 @@ classdef Simulator
             v = VideoWriter(filename,'MPEG-4');
             v.FrameRate = round(1/dt*speed);
             open(v);
-            writeVideo(v,F(1:t));
+            writeVideo(v,F(1:end));
             close(v);
             disp("Animation : 動画が保存されました")
         end

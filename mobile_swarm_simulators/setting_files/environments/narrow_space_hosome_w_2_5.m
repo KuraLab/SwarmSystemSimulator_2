@@ -3,13 +3,13 @@
 % 環境サイズ決定
 envset_xmin = -8;
 envset_xmax = 8;
-envset_ymin = -8;
-envset_ymax = 8;
+envset_ymin = -5;
+envset_ymax = 5;
 
 % 障害物
-L1_ = 8;    % 狭くなりはじめ-広くなり終わりまでの距離
-L2_ = 4;    % 狭所長さ
-L3_ = 2;  % 狭所幅, w
+L1_ = 3;    % 狭くなりはじめ-広くなり終わりまでの距離
+L2_ = 1;    % 狭所長さ
+L3_ = 2.1;  % 狭所幅, w
 % L3_ = obj.param.w;
 
 % [[x1,y1];[x2,y2]]の形で線分を指定していく

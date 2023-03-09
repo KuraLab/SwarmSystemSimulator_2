@@ -9,6 +9,8 @@ classdef MobileRobots2dSimulator < Simulator
         u       % 入力
         G       % グラフオブジェクト．MATLABのgraph参照
         wall     % 壁セグメントの集合 [開始/終了,空間次元,セグメント]
+        variances   % 位置の分散の時刻履歴 [台数,1,時刻]
+        is_stop  % 停止状態か？ [台数,1,時刻]
     end
 
     methods
@@ -31,12 +33,15 @@ classdef MobileRobots2dSimulator < Simulator
             %%%%%%%% システムパラメータ %%%%%%%%
             % obj.param.K = 1;       % ゲイン
             obj.param.rv = 1.6;      % 観測範囲
+            obj.param.stop_timehistry = 256;    % 停止検知用時間幅
+            obj.param.stop_threshold = 0.01;    % 停止検知用閾値
             %%%%%%%% 読み込みファイル名 %%%%%%%%
             obj.param.environment_file = "setting_files/environments/narrow_space.m";  % 環境ファイル
             obj.param.placement_file = "setting_files/init_conditions/narrow_20.m";    % 初期位置ファイル
             %%%%%%%%%%%%%% 初期値 %%%%%%%%%%%%%
             obj.param.x_0 = rand(obj.param.Na, 2);
-            obj.param.dxdt_0 = zeros(obj.param.Na, 2);
+            obj.param.dxdt_0 = 0;%zeros(obj.param.Na, 2);
+            obj.param.initial_pos_variance = 0;  % 初期位置の分散
         end
         
         function obj = initializeVariables(obj)
@@ -44,10 +49,13 @@ classdef MobileRobots2dSimulator < Simulator
             % 状態変数の定義と初期値の代入を行うこと
             obj.t_vec = 0:obj.param.dt:obj.param.dt*(obj.param.Nt-1); % 時刻ベクトルの定義
             obj.x(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 状態変数の定義
+            obj.param.x_0 = obj.param.x_0 + (2*rand(obj.param.Na, 2)-1)*obj.param.initial_pos_variance;
             obj.x(:,:,1) = obj.param.x_0;   % 初期値の代入
             obj.dxdt(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 状態変数の定義
             obj.dxdt(:,:,1) = obj.param.dxdt_0;   % 初期値の代入
             obj.u(:,:,:) = zeros(obj.param.Na, 2, obj.param.Nt);    % 入力の履歴
+            obj.variances(:,:,:) = ones(obj.param.Na, 1, obj.param.Nt);  % 位置の分散
+            obj.is_stop(:,:,:) = zeros(obj.param.Na, 1, obj.param.Nt);  % 停止判定
         end
         
         function obj = readSettingFiles(obj)
@@ -137,6 +145,48 @@ classdef MobileRobots2dSimulator < Simulator
             end
         end
 
+        function obj = stopDetect(obj,t,is_debug)
+            % 停止状態を検知
+            arguments
+                obj
+                t                   % 時刻
+                is_debug = false    % デバッグか？
+            end
+            if t < obj.param.stop_timehistry
+                return  % データがたまっていなかったらリターン 迷いどころ
+            end
+            obj.variances(:,:,t) = 1/2*sum(var(obj.x(:,:,t-obj.param.stop_timehistry+1:t),0,3), 2) ; % 位置の分散を取得．x方向とy方向のやつを足し合わせ
+            obj.is_stop(:,:,t) = obj.variances(:,:,t) < obj.param.stop_threshold;    % 位置の分散が閾値より低かったら停止状態と判断
+        end
+
+    %%%%%%%%%%%%%%%%%%%%% 解析まわり %%%%%%%%%%%%%%%%%%
+    function obj = minimumDistanceCheck(obj, stepwidth, num)
+        % 時刻歴の中での最小距離を出す．cbfのバリデーション用に
+        % @brief 座標xは計算済みであることを前提
+        arguments
+            obj
+            stepwidth = 1:obj.param.Nt  % 対象となる時刻歴
+            num = 1:obj.param.Na        % 対象となるエージェントの集合
+        end
+        minimum_distance_agents = zeros(1,obj.param.Nt);    % エージェント間の最小距離
+        minimum_distance_wall = zeros(1,obj.param.Nt);      % エージェント-壁間の最小距離
+        for t = stepwidth
+            Xa_ij(:,:,1) = repmat(obj.x(num,1,t),1,obj.param.Na)-repmat(obj.x(num,1,t),1,obj.param.Na).';   % 各方向相対位置ベクトル
+            Xa_ij(:,:,2) = repmat(obj.x(num,2,t),1,obj.param.Na)-repmat(obj.x(num,2,t),1,obj.param.Na).';
+            minimum_distance_agents(1,t) = min(vecnorm(Xa_ij,2,3)+100*eye(length(num)),[],'all');           % 対角に値を足した上で，最小距離を出す
+            Xw_ij = obj.calcVectorToWalls(t);   % 壁までの相対位置ベクトル
+            minimum_distance_wall(1,t) = min(vecnorm(Xw_ij(num,:,:),2,2),[],'all'); % 最小距離
+        end
+        figure
+        subplot(2,1,1)
+        plot(stepwidth,minimum_distance_agents);
+        ylabel("between Robots")
+        subplot(2,1,2)
+        plot(stepwidth,minimum_distance_wall);
+        ylabel("between Robot and Walls")
+        xlabel("Timestep")
+    end
+
     %%%%%%%%%%%%%%%%%%%%% 描画まわり %%%%%%%%%%%%%%%%%%
 
         function obj = placePlot(obj, t, view_edge, val)
@@ -144,7 +194,7 @@ classdef MobileRobots2dSimulator < Simulator
             arguments
                 obj
                 t               % 時刻
-                view_edge = true                    % エッジ表示するか？
+                view_edge = false                    % エッジ表示するか？
                 val = zeros(obj.param.Na,1)         % ロボットに特徴づける値．これに応じてロボットの色が変わる
             end
             if view_edge    % エッジ表示するなら
@@ -155,7 +205,8 @@ classdef MobileRobots2dSimulator < Simulator
             scatter(obj.x(:,1,t),obj.x(:,2,t),120,val,'filled','MarkerEdgeColor','k'); % 散布図表示
             xlim(obj.param.space_x);    % 描画範囲を決定
             ylim(obj.param.space_y);
-            pbaspect([1 1 1])             % 縦横のアスペクト比を合わせる
+            %pbaspect([1 1 1])             % 縦横のアスペクト比を合わせる
+            daspect([1 1 1])
             colormap(gca,"cool")
             hold on
         end
@@ -175,6 +226,23 @@ classdef MobileRobots2dSimulator < Simulator
             end
             line(permute(obj.wall(:,1,:),[1,3,2]), permute(obj.wall(:,2,:),[1,3,2]), 'Color',"k",'LineWidth',1)
         end
+        
+        function obj = variancePlot(obj,num)
+            % 位置の分散の時刻プロット
+            arguments
+                obj
+                num = 8 % 表示対象のエージェント
+            end
+            
+            figure
+            plot(1:obj.param.Nt, permute(obj.variances(num,1,:),[3,1,2]))
+            l = legend(string(num));
+            l.NumColumns = 4;
+            %ylim([-100,100])
+            xlim([0,obj.param.Nt])
+            ylabel("Variance of Position m^2]")
+            xlabel("TIme Step")
+        end
 
         function obj = moviePlot(obj,t)
             % 動画用プロット
@@ -183,7 +251,7 @@ classdef MobileRobots2dSimulator < Simulator
             text(obj.param.space_x(2)*0.7, obj.param.space_y(2)*0.8, "t = "+string(t), 'FontSize',12);
             hold off
         end
-
+        
         function obj = subplot(obj)
             % 一括描画用の最低限プロット
             % plot(obj.t_vec, obj.x(:,:));
