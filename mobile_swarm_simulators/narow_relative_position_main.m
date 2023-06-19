@@ -13,8 +13,8 @@ simulation.setFigureProperty("large");                  % 描画の基本設定�
 
 %% シミュレーションの実施 : 単発
 simulation = simulation.setParam("environment_file","setting_files/environments/square.m");   % パラメタ変更
-%simulation = simulation.setParam("placement_file","setting_files/init_conditions/round_20.m");   % パラメタ変更
-simulation = simulation.setParam("placement_file","setting_files/init_conditions/round_1.m");   % パラメタ変更
+simulation = simulation.setParam("placement_file","setting_files/init_conditions/round_20.m");   % パラメタ変更
+%simulation = simulation.setParam("placement_file","setting_files/init_conditions/round_1.m");   % パラメタ変更
 %simulation = simulation.setParam("environment_file","setting_files/environments/narrow_space_hosome_w_4.m");   % パラメタ変更
 %simulation = simulation.setParam("placement_file","setting_files/init_conditions/narrow_20.m");   % パラメタ変更
 % COS %
@@ -42,8 +42,8 @@ simulation = simulation.setParam("attract_force_type", "trip");
 simulation = simulation.setParam("cbf_rs", 0.8);  % 安全距離
 simulation = simulation.setParam("cbf_gamma", 5); % ナイーブパラメタ
 % kp調整 %
-%simulation = simulation.setParam("deadlock_source","cos");
-simulation = simulation.setParam("deadlock_source","stop");
+simulation = simulation.setParam("deadlock_source","cos");
+%simulation = simulation.setParam("deadlock_source","stop");
 %simulation = simulation.setParam("do_kp_adjust",false);  % kp調整を実施？
 simulation = simulation.setParam("do_kp_adjust",true);  % kp調整を実施？
 simulation = simulation.setParam("kp_adjust_out",-0.3);
